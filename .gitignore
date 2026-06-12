@@ -1,0 +1,17 @@
+[Bb]in/
+[Oo]j/
+.vs/
+.vscode/
+
+*.zip
+*.bak
+*.tmp
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+TestResults/
+
+*.log

@@ -3,6 +3,8 @@
 .vs/
 .vscode/
 
+Data
+
 *.zip
 *.bak
 *.tmp

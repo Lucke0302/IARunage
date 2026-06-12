@@ -4,8 +4,8 @@ namespace Runage.Models;
 
 public class QAgent
 {
-    private const int NUM_ACOES = 6; 
-    private const int NUM_FEATURES = 6; 
+    private const int NUM_ACOES = 8;
+    private const int NUM_FEATURES = 7; 
     private float[,] pesos = new float[NUM_ACOES, NUM_FEATURES];
     private float learningRate = 0.05f; 
     private float discountFactor = 0.95f; 
@@ -37,23 +37,28 @@ public class QAgent
         taxaExploracao = nivel;
     }
 
-    public int EscolherAcao(float[] features)
-    {
-        if (rnd.NextDouble() < taxaExploracao) return rnd.Next(0, NUM_ACOES); 
+    private static readonly int[] TodasAsAcoes = { 0, 1, 2, 3, 4, 5, 6, 7 };
 
-        float[] qs = new float[NUM_ACOES];
+    public int EscolherAcao(float[] features, int[]? acoesPermitidas = null)
+    {
+        int[] acoes = acoesPermitidas ?? TodasAsAcoes;
+
+        // Limita a exploração aleatória apenas às ações desbloqueadas
+        if (rnd.NextDouble() < taxaExploracao) return acoes[rnd.Next(acoes.Length)];
+
+        float[] qs = new float[acoes.Length];
         float maxQ = float.MinValue;
-        
-        for (int i = 0; i < NUM_ACOES; i++) 
+
+        for (int i = 0; i < acoes.Length; i++)
         {
-            qs[i] = CalcularQ(i, features);
-            if (qs[i] > maxQ) maxQ = qs[i]; 
+            qs[i] = CalcularQ(acoes[i], features);
+            if (qs[i] > maxQ) maxQ = qs[i];
         }
 
         float somaExp = 0f;
-        float[] probabilidades = new float[NUM_ACOES];
-        
-        for (int i = 0; i < NUM_ACOES; i++) 
+        float[] probabilidades = new float[acoes.Length];
+
+        for (int i = 0; i < acoes.Length; i++)
         {
             probabilidades[i] = (float)Math.Exp((qs[i] - maxQ) / temperatura);
             somaExp += probabilidades[i];
@@ -61,21 +66,22 @@ public class QAgent
 
         double roleta = rnd.NextDouble() * somaExp;
         float acumulado = 0f;
-        
-        for (int i = 0; i < NUM_ACOES; i++) 
+
+        for (int i = 0; i < acoes.Length; i++)
         {
             acumulado += probabilidades[i];
-            if (roleta <= acumulado) return i; 
+            if (roleta <= acumulado) return acoes[i];
         }
-        
-        return ObterMelhorAcao(features); 
+
+        return ObterMelhorAcao(features, acoes);
     }
 
-    private int ObterMelhorAcao(float[] features)
+    private int ObterMelhorAcao(float[] features, int[]? acoesPermitidas = null)
     {
-        int melhorAcao = 0;
+        int[] acoes = acoesPermitidas ?? TodasAsAcoes;
+        int melhorAcao = acoes[0];
         float maxQ = float.MinValue;
-        for (int a = 0; a < NUM_ACOES; a++)
+        foreach (int a in acoes)
         {
             float q = CalcularQ(a, features);
             if (q > maxQ) { maxQ = q; melhorAcao = a; }

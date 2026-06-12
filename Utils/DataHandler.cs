@@ -28,4 +28,18 @@ public static class DataHandler
         string path = Path.Combine(dir, "pesos_Colmeia.json");
         File.WriteAllText(path, JsonSerializer.Serialize(pesos, jsonOptions));
     }
+
+    public static float[][]? CarregarPesosPlayer(float vies, string nomeArquivo)
+    {
+        string path = Path.Combine(BaseDir, "Player", $"Vies_{vies:F1}", nomeArquivo);
+        if (!File.Exists(path)) return null;
+        return JsonSerializer.Deserialize<float[][]>(File.ReadAllText(path), jsonOptions);
+    }
+
+    public static float[][]? CarregarPesosNPC(string nomeNpc, float viesPlayer)
+    {
+        string path = Path.Combine(BaseDir, "NPC", nomeNpc.Replace(" ", "_"), $"Vies_{viesPlayer:F1}", "pesos_Colmeia.json");
+        if (!File.Exists(path)) return null;
+        return JsonSerializer.Deserialize<float[][]>(File.ReadAllText(path), jsonOptions);
+    }
 }

@@ -27,7 +27,7 @@ switch (modulo)
         ForjaMassiva.Iniciar(viesValor);
         break;
     case 3:
-        //ModoSobrevivencia.Iniciar(viesValor);
+        ModoSobrevivencia.Iniciar(viesValor);
         break;
     case 4:
         ArenaDeTestes.ExecutarTesteGlobal(viesValor);

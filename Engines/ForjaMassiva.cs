@@ -96,10 +96,13 @@ public static class ForjaMassiva
     private static void ExecutarEpisodio(QAgent player, QAgent mob, PerfilMob perfil, float vies)
     {
         CombatEnvironment env = new CombatEnvironment(0, perfil, vies);
+        
+        env.CombateMortal = true; 
+        
         bool lutaAtiva = true;
         int turnosAtuais = 0;
 
-        while (lutaAtiva && turnosAtuais < 100)
+        while (lutaAtiva && turnosAtuais < 500) 
         {
             turnosAtuais++;
             float[] estadoBase = env.GetFeatures();

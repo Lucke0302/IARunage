@@ -132,9 +132,11 @@ public static class ModoSobrevivencia
 
         CombatEnvironment env = new CombatEnvironment(0, inimigo, viesValor);
         
-        env.CombateMortal = true; 
-        env.PlayerMultiplicador = pMultiplicador;
-        env.PlayerHP = 100f * pMultiplicador; 
+        env.CombateMortal = true;
+        // O construtor ja calculou HP e Multiplicador com base no vies.
+        // pMultiplicador reflete o crescimento acumulado do player nos andares.
+        env.PlayerMultiplicador *= pMultiplicador;
+        env.PlayerHP            *= pMultiplicador;
         
         bool lutaAtiva = true;
         int turnosAtuais = 0;

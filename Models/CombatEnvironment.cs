@@ -24,6 +24,9 @@ public class CombatEnvironment
     private float mobHpInicial;
     private Random rnd = new();
 
+    // Dano pesado máximo do mob, normalizado para a feature de perigo
+    private float mobDanoPesadoNormalizado;
+
     public CombatEnvironment(int deathCount, PerfilMob perfil, float vies)
     {
         playerDeathCount = deathCount;
@@ -32,6 +35,21 @@ public class CombatEnvironment
         
         MobHP = perfil.HpBase;
         mobHpInicial = perfil.HpBase;
+
+        // Dano potencial do mob: DanoPesado * multiplicador do arquétipo, normalizado
+        // por um teto de referência (150f) pra caber em [0,1]. Mob muito perigoso → ~1.0,
+        // Cervo escalado → valor alto que o agente agora consegue "ver".
+        float danoPesadoReal = perfil.DanoPesado * perfil.Arquetipo.MultiplicadorDano;
+        mobDanoPesadoNormalizado = Math.Clamp(danoPesadoReal / 150f, 0f, 1f);
+
+        // Escalonamento por vies (ponto neutro = vies 0.5 = stats base):
+        // HP:   vies 0.0 → +50% extra | vies 0.5~1.0 → base (1.0x)
+        // Dano: vies 0.5~0.0 → base  | vies 1.0 → +50% extra
+        float fatorHP   = (vies < 0.5f) ? (1.5f - vies) : 1.0f;   // 0.0→1.5 | 0.5→1.0 | 1.0→1.0
+        float fatorDano = (vies > 0.5f) ? (0.5f + vies) : 1.0f;   // 0.0→1.0 | 0.5→1.0 | 1.0→1.5
+
+        PlayerHP            = 100f * fatorHP;
+        PlayerMultiplicador = fatorDano;
     }
 
     private float CalcularDanoOrganico(float baseDamage)
@@ -42,13 +60,14 @@ public class CombatEnvironment
     }
 
     public float[] GetFeatures() => [ 
-        1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f), 
-        Math.Clamp(PlayerHP / (100f * Math.Max(1f, PlayerMultiplicador)), 0f, 1f), 
-        Math.Clamp(MobHP / Math.Max(1f, mobHpInicial), 0f, 1f),                                 
-        (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f, 
-        Math.Clamp(turnosPacificos / 6.0f, 0f, 1f), 
-        (playerCooldownRuna == 0) ? 1.0f : 0.0f,
-        (mobStunturnos > 0) ? 1.0f : 0.0f
+        1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f),                            // [0] proximidade
+        Math.Clamp(PlayerHP / (100f * Math.Max(1f, PlayerMultiplicador)), 0f, 1f), // [1] HP do player (%)
+        Math.Clamp(MobHP / Math.Max(1f, mobHpInicial), 0f, 1f),                    // [2] HP do mob (%)
+        (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f,                       // [3] aura moral
+        Math.Clamp(turnosPacificos / 6.0f, 0f, 1f),                                // [4] turnos pacifico
+        (playerCooldownRuna == 0) ? 1.0f : 0.0f,                                   // [5] runa disponivel
+        (mobStunturnos > 0) ? 1.0f : 0.0f,                                         // [6] mob atordoado
+        mobDanoPesadoNormalizado                                                    // [7] perigo do mob
     ];
 
     public float[] ResolverTick(int acaoPlayer, int acaoMob)
@@ -153,6 +172,13 @@ public class CombatEnvironment
 
                 recompensas[0] += (danoEfetivo - overkill - custoHp) * playerVies; 
                 recompensas[1] -= 80f; 
+
+                // Punicao adicional por desperdicio: Sobrecarga e anti-tanque.
+                // Mobs com HP maximo baixo (Cervo ~15, Aldeao ~30) geram punicao
+                // severa. Referencia de 200f = HP minimo de um tanque real.
+                // Independente do overkill: usar Sobrecarga em mob fraco e sempre ruim.
+                float fraquezaMob = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
+                recompensas[0] -= 300f * fraquezaMob;
             }
         }
 
@@ -178,8 +204,10 @@ public class CombatEnvironment
                 AuraPlayer += 15f; 
                 alguemAtacou = true;
                 
-                // Impede que a IA de um Aldeão/Guarda decida virar um assassino só por pontos.
-                float punicaoMob = -1000f * (1.0f - arq.ChanceAgressaoInicial);
+                // Punição severa para primeiro ataque injustificado.
+                // Arquetipos defensivos (ChanceAgressaoInicial ≈ 0) levam -2500f,
+                // enquanto agressivos (ChanceAgressaoInicial ≈ 1) levam -250f
+                float punicaoMob = -2500f * (1.0f - arq.ChanceAgressaoInicial);
                 recompensas[1] += punicaoMob;
             }
         }
@@ -246,8 +274,30 @@ public class CombatEnvironment
         if (mobPacifico && arq.ChanceAgressaoInicial >= 0.6f)
             recompensas[1] -= 30f;
 
+
+        // Punicao continua para mobs defensivos que atacam sem o player ter sido agressivo
+        // neste turno. Quanto mais defensivo o arquetipo (ChanceAgressaoInicial baixo),
+        // maior a punicao - o Guarda Veterano (HumanoForte, 0f) recebe o maximo.
+        // Vale a cada turno que o mob defensivo ataca sem ser provocado.
+        if (mobTentouAtacar && !playerAgressivo && arq.ChanceAgressaoInicial < 0.3f)
+        {
+            float grauDefensivo = 1.0f - (arq.ChanceAgressaoInicial / 0.3f);
+            recompensas[1] -= 800f * grauDefensivo;
+        }
         if (acaoPlayer == 4 && !mobPacifico)
             recompensas[0] -= turnosPacificosTotal * 0.8f;
+
+        // Penalidade por impasse inerte: se o player ficou passivo E o mob ainda
+        // está com HP alto, o combate não está progredindo. Cresce com o HP restante
+        // do mob (máximo quando HP cheio, zero quando quase morto) e é inversamente
+        // proporcional ao viés pacífico — o 0.8 sente mais pressão pra resolver logo,
+        // o 0.0 tem mais tolerância pra esperar uma saída não-violenta.
+        // Não dispara se o combate já terminou (morte, fuga, empate pacífico).
+        if (!IsGameOver && playerPacifico && MobHP >= mobHpInicial * 0.5f)
+        {
+            float pressaoInacao = 8f * (MobHP / mobHpInicial) * playerVies;
+            recompensas[0] -= pressaoInacao;
+        }
 
         if (turnosPacificos > 0 && rnd.NextDouble() < arq.ChanceAtaqueAposEmpate)
         {
@@ -278,7 +328,18 @@ public class CombatEnvironment
             
             if (acaoMob == 3) { recompensas[0] -= 10f; recompensas[1] += 40f; } 
             else { 
-                MobHP -= danoRuna; 
+                float hpMobAntesRuna = MobHP;
+                MobHP -= danoRuna;
+
+                // Penalização por overkill: Runa é anti-tanque leve — desperdiçá-la
+                // num mob de HP baixo (Cervo ~15, Aldeão ~30) é ineficiente e deve
+                // ser desestimulado. Quanto maior o overkill relativo ao HP inicial
+                // do mob, maior a punição — mas bem mais suave que a Sobrecarga
+                // (teto de 80f vs 300f), pois a Runa ainda buffa fogo por 3 turnos.
+                float overkillRuna = Math.Max(0f, danoRuna - hpMobAntesRuna);
+                float fraquezaMobRuna = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
+                recompensas[0] -= 80f * fraquezaMobRuna * Math.Clamp(overkillRuna / Math.Max(1f, hpMobAntesRuna), 0f, 1f);
+
                 recompensas[0] += 55f * playerVies; 
                 recompensas[1] -= 60f; 
             }
@@ -301,16 +362,30 @@ public class CombatEnvironment
 
                 if (acaoMob == 3) { recompensas[0] -= 10f; recompensas[1] += 20f; } 
                 else if (acaoMob == 2) 
-                { 
-                    recompensas[0] -= 10f; 
-                    recompensas[1] += 10f; 
-
-                    if (rnd.NextDouble() < arq.ChanceContraAtaque)
+                {
+                    if (acaoPlayer == 1)
                     {
-                        float danoContra = CalcularDanoOrganico(danoP * arq.MultiplicadorContraAtaque);
-                        PlayerHP -= danoContra;
-                        ultimoDanoFoiAutoDano = false;
-                        recompensas[0] -= danoContra * 1.2f;
+                        // Ataque Pesado quebra a defesa: causa dano normalmente,
+                        // mas o mob é punido por ter defendido mal e o player
+                        // recebe bônus por ter perfurado.
+                        MobHP -= danoP;
+                        recompensas[0] += (danoP * 2f) * playerVies;
+                        recompensas[0] += 20f;        // bônus de perfuração
+                        recompensas[1] -= 60f;        // punição por defesa quebrada
+                    }
+                    else
+                    {
+                        // Ataque Leve bloqueado: defesa segura, sem dano.
+                        recompensas[0] -= 10f;
+                        recompensas[1] += 10f;
+
+                        if (rnd.NextDouble() < arq.ChanceContraAtaque)
+                        {
+                            float danoContra = CalcularDanoOrganico(danoP * arq.MultiplicadorContraAtaque);
+                            PlayerHP -= danoContra;
+                            ultimoDanoFoiAutoDano = false;
+                            recompensas[0] -= danoContra * 1.2f;
+                        }
                     }
                 } 
                 else { 

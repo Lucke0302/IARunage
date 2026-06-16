@@ -21,7 +21,7 @@ public static class ForjaMassiva
 
         Console.WriteLine("[FASE 1] Forjando o Cérebro Global (Sobrevivência Básica)...");
         QAgent playerGlobal = new QAgent(tempPlayer, instintosPlayer);
-        TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 5, episodios: 3000);
+        TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 10, episodios: 6000);
         
         // Salva a baseline do Player
         float[][] pesosGlobais = playerGlobal.ExportarPesos();
@@ -37,12 +37,12 @@ public static class ForjaMassiva
             //  O Player carrega a experiência Global que acabou de aprender
             QAgent playerEspecializado = new QAgent(tempPlayer, instintosPlayer);
             playerEspecializado.ImportarPesos(pesosGlobais);
-            playerEspecializado.DefinirExploracao(0.4f); 
+            playerEspecializado.DefinirExploracao(0.6f); 
 
             // O Mob nasce do zero para aprender a focar ESSE viés de Player específico
             QAgent mobColmeia = new QAgent(mobAtual.Temperatura, mobAtual.InstintosBase);
 
-            TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 5, episodios: 3000);
+            TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000);
 
             // Salva os cérebros finais
             DataHandler.SalvarPesosPlayer(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
@@ -64,40 +64,118 @@ public static class ForjaMassiva
         var listaMobs = mobs.Values.ToList();
         Random rnd = new();
 
+        int totalVitorias = 0;
+        int totalDerrotas = 0;
+        int totalEmpates = 0;
+
         for (int sim = 1; sim <= sims; sim++)
         {
+            int andarMin = 1;
+            int andarMax = sim * 10;
+            
+            Console.WriteLine($"   -> Simulação {sim}/{sims} (Andares {andarMin}-{andarMax})...");
+
             for (int ep = 1; ep <= episodios; ep++)
             {
-                // Puxa um mob aleatório a cada episódio para evitar sobreajuste (overfitting)
                 PerfilMob mobSorteado = listaMobs[rnd.Next(listaMobs.Count)];
                 QAgent mobDummy = new QAgent(mobSorteado.Temperatura, mobSorteado.InstintosBase);
                 
-                ExecutarEpisodio(player, mobDummy, mobSorteado, vies);
+                int andarSorteado = rnd.Next(andarMin, andarMax + 1);
+                
+                // Progressão do Player
+                float pMultiplicador = 1.0f + (andarSorteado * 0.20f);
+                
+                // Progressão do Inimigo
+                float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
+
+                // Clona o mob com status bufados simulando os andares profundos
+                PerfilMob mobTreino = new PerfilMob(
+                    mobSorteado.Nome, mobSorteado.Arquetipo, mobSorteado.Temperatura, 
+                    mobSorteado.InstintosBase, mobSorteado.RecompensaAbate, 
+                    mobSorteado.HpBase * mMultiplicador, 
+                    mobSorteado.DanoLeve * mMultiplicador, 
+                    mobSorteado.DanoPesado * mMultiplicador
+                );
+
+                int resultado = ExecutarEpisodio(player, mobDummy, mobTreino, vies, pMultiplicador, andarSorteado);
+                
+                if (resultado == 1) totalVitorias++;
+                else if (resultado == -1) totalDerrotas++;
+                else totalEmpates++;
             }
             float pisoAtual = 0.2f - ((sim - 1f) / (sims - 1f) * 0.15f);
             player.ForcarAmadurecimento(pisoAtual);
         }
+
+        int totalLutas = sims * episodios;
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"\n[ESTATÍSTICAS DO TREINO GLOBAL]");
+        Console.WriteLine($"Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates/Fugas: {(totalEmpates / (float)totalLutas):P2}\n");
+        Console.ResetColor();
     }
 
     private static void TreinarEspecializado(QAgent player, QAgent mob, PerfilMob perfil, float vies, int sims, int episodios)
     {
+        Random rnd = new();
+        
+        int totalVitorias = 0;
+        int totalDerrotas = 0;
+        int totalEmpates = 0;
+
         for (int sim = 1; sim <= sims; sim++)
         {
+            int andarMin = 1;
+            int andarMax = sim * 10;
+
             for (int ep = 1; ep <= episodios; ep++)
             {
-                ExecutarEpisodio(player, mob, perfil, vies);
+                int andarSorteado = rnd.Next(andarMin, andarMax + 1);
+                
+                // Progressão do Player
+                float pMultiplicador = 1.0f + (andarSorteado * 0.20f);
+                
+                // Progressão do Inimigo
+                float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
+
+                // Clona o mob com status bufados simulando os andares profundos
+                PerfilMob mobTreino = new PerfilMob(
+                    perfil.Nome, perfil.Arquetipo, perfil.Temperatura, 
+                    perfil.InstintosBase, perfil.RecompensaAbate, 
+                    perfil.HpBase * mMultiplicador, 
+                    perfil.DanoLeve * mMultiplicador, 
+                    perfil.DanoPesado * mMultiplicador
+                );
+                
+                int resultado = ExecutarEpisodio(player, mob, mobTreino, vies, pMultiplicador, andarSorteado);
+                
+                if (resultado == 1) totalVitorias++;
+                else if (resultado == -1) totalDerrotas++;
+                else totalEmpates++;
             }
             float pisoAtual = 0.2f - ((sim - 1f) / (sims - 1f) * 0.15f);
             player.ForcarAmadurecimento(pisoAtual);
             mob.ForcarAmadurecimento(pisoAtual);
         }
+
+        int totalLutas = sims * episodios;
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine($"   -> Stats vs {perfil.Nome}: Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates: {(totalEmpates / (float)totalLutas):P2}");
+        Console.ResetColor();
     }
 
-    private static void ExecutarEpisodio(QAgent player, QAgent mob, PerfilMob perfil, float vies)
+    // Adicionado o parâmetro 'int andar'
+    private static int ExecutarEpisodio(QAgent player, QAgent mob, PerfilMob perfil, float vies, float pMultiplicador, int andar)
     {
         CombatEnvironment env = new CombatEnvironment(0, perfil, vies);
-        
         env.CombateMortal = true; 
+        
+        env.PlayerMultiplicador *= pMultiplicador;
+        env.PlayerHP            *= pMultiplicador;
+
+        List<int> acoesDesbloqueadas = new() { 0, 1, 2, 3, 4, 5 };
+        if (andar >= 5) acoesDesbloqueadas.Add(7); 
+        if (andar >= 10) acoesDesbloqueadas.Add(6);
+        int[] acoesPermitidas = acoesDesbloqueadas.ToArray();
         
         bool lutaAtiva = true;
         int turnosAtuais = 0;
@@ -107,7 +185,7 @@ public static class ForjaMassiva
             turnosAtuais++;
             float[] estadoBase = env.GetFeatures();
 
-            int acaoPlayer = player.EscolherAcao(estadoBase);
+            int acaoPlayer = player.EscolherAcao(estadoBase, acoesPermitidas);
             int acaoMob = mob.EscolherAcao(estadoBase);
 
             float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
@@ -118,6 +196,10 @@ public static class ForjaMassiva
 
             if (env.IsGameOver) lutaAtiva = false;
         }
+
+        if (env.PlayerHP <= 0) return -1;
+        if (env.MobHP <= 0) return 1;
+        return 0;
     }
 
     private static float[] CalcularInstintos(float viesValor)

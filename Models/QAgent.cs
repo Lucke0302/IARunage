@@ -5,12 +5,12 @@ namespace Runage.Models;
 public class QAgent
 {
     private const int NUM_ACOES = 8;
-    private const int NUM_FEATURES = 7; 
+    private const int NUM_FEATURES = 8; 
     private float[,] pesos = new float[NUM_ACOES, NUM_FEATURES];
     private float learningRate = 0.05f; 
     private float discountFactor = 0.95f; 
     private float taxaExploracao = 1.0f;  
-    private float decaimentoExploracao = 0.999f; 
+    private float decaimentoExploracao = 0.9995f; 
     private float temperatura;
     private Random rnd = new();
 
@@ -96,9 +96,9 @@ public class QAgent
         return q;
     }
 
-    public void Aprender(float[] estadoAntigo, int acao, float recompensa, float[] estadoNovo)
+    public void Aprender(float[] estadoAntigo, int acao, float recompensa, float[] estadoNovo, int[]? acoesPermitidas = null)
     {
-        float maxQFuturo = CalcularQ(ObterMelhorAcao(estadoNovo), estadoNovo);
+        float maxQFuturo = CalcularQ(ObterMelhorAcao(estadoNovo, acoesPermitidas), estadoNovo);
         float qAtual = CalcularQ(acao, estadoAntigo);
         float erroTD = recompensa + (discountFactor * maxQFuturo) - qAtual;
 
@@ -108,7 +108,7 @@ public class QAgent
             pesos[acao, i] = Math.Clamp(pesos[acao, i] + variacaoPeso, -10000f, 10000f); 
         }
 
-        if (taxaExploracao > 0.15f) taxaExploracao *= decaimentoExploracao;
+        if (taxaExploracao > 0.08f) taxaExploracao *= decaimentoExploracao;
     }
 
     public float[][] ExportarPesos()

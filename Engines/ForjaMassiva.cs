@@ -191,9 +191,9 @@ public static class ForjaMassiva
             float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
             float[] novoEstado = env.GetFeatures();
             
-            player.Aprender(estadoBase, acaoPlayer, recompensas[0], novoEstado);
+            player.Aprender(estadoBase, acaoPlayer, recompensas[0], novoEstado, acoesPermitidas);
             mob.Aprender(estadoBase, acaoMob, recompensas[1], novoEstado);
-
+            
             if (env.IsGameOver) lutaAtiva = false;
         }
 

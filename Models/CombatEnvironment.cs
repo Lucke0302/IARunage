@@ -258,6 +258,11 @@ public class CombatEnvironment
         bool playerPacifico = (acaoPlayer == 2 || acaoPlayer == 3 || acaoPlayer == 4 || acaoPlayer == 7);
         bool mobPacifico = (acaoMob == 2 || acaoMob == 3 || acaoMob == 4);
 
+        if (perfilMob.ResisteHitKill && mobHpAnterior >= mobHpInicial && MobHP <= 0)
+        {
+            MobHP = 1f;
+        }
+
         // Morte é sempre checada primeiro: se alguém já morreu (dano de Sobrecarga/Runa
         // resolvido antes deste bloco), o combate termina aqui e a recompensa de abate
         // é processada no final da função, nunca pelos returns de empate abaixo.
@@ -456,6 +461,11 @@ public class CombatEnvironment
                     recompensas[0] -= (danoM * 2.5f); 
                 }
             }
+        }
+
+        if (perfilMob.ResisteHitKill && mobHpAnterior >= mobHpInicial && MobHP <= 0)
+        {
+            MobHP = 1f;
         }
 
         if (PlayerHP <= 0 || MobHP <= 0) IsGameOver = true;

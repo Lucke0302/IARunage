@@ -97,7 +97,8 @@ public static class ForjaMassiva
                     mobSorteado.InstintosBase, mobSorteado.RecompensaAbate, 
                     mobSorteado.HpBase * mMultiplicador, 
                     mobSorteado.DanoLeve * mMultiplicador, 
-                    mobSorteado.DanoPesado * mMultiplicador
+                    mobSorteado.DanoPesado * mMultiplicador,
+                    mobSorteado.ResisteHitKill
                 );
 
                 int resultado = ExecutarEpisodio(player, mobDummy, mobTreino, vies, pMultiplicador, andarSorteado);
@@ -146,7 +147,8 @@ public static class ForjaMassiva
                     perfil.InstintosBase, perfil.RecompensaAbate, 
                     perfil.HpBase * mMultiplicador, 
                     perfil.DanoLeve * mMultiplicador, 
-                    perfil.DanoPesado * mMultiplicador
+                    perfil.DanoPesado * mMultiplicador,
+                    perfil.ResisteHitKill
                 );
                 
                 int resultado = ExecutarEpisodio(player, mob, mobTreino, vies, pMultiplicador, andarSorteado);
@@ -232,14 +234,14 @@ public static class ForjaMassiva
     {
         return new Dictionary<int, PerfilMob>
         {
-            { 1, new PerfilMob("Aldeão Assustado", Arquetipos.HumanoComum, 40.0f, new float[] { -50f, -100f, 50f, 300f, 300f, -100f }, 5f, 30f, 2f, 5f) },
-            { 2, new PerfilMob("Lobo Faminto", Arquetipos.AnimalAgressivo, 80.0f, new float[] { 250f, 400f, 0f, 0f, -50f, 0f }, 150f, 50f, 8f, 20f) },
-            { 3, new PerfilMob("Guarda Veterano", Arquetipos.HumanoForte, 20.0f, new float[] { 100f, 50f, 150f, 0f, 50f, 150f }, 500f, 800f, 15f, 35f) },
-            { 4, new PerfilMob("Bandido Oportunista", Arquetipos.Oportunista, 60.0f, new float[] { 150f, 100f, 0f, 200f, -50f, 0f }, 250f, 60f, 10f, 25f) },
-            { 5, new PerfilMob("Espirito Vingativo", Arquetipos.DefensorVingativo, 30.0f, new float[] { 50f, 0f, 200f, 50f, 100f, 300f }, 450f, 150f, 5f, 15f) },
-            { 6, new PerfilMob("Cervo de Prodigios", Arquetipos.AnimalIndefeso, 70.0f, new float[] { -200f, -200f, 0f, 400f, 200f, -100f }, 150f, 15f, 1f, 3f) },
-            { 7, new PerfilMob("Urso Territorial", Arquetipos.AnimalReativo, 30.0f, new float[] { 50f, 100f, 50f, 0f, 300f, 0f }, 250f, 120f, 20f, 50f) },
-            { 8, new PerfilMob("Cultista Frenetico", Arquetipos.Inimigo, 60.0f, new float[] { 300f, 150f, -50f, -100f, -200f, 200f }, 300f, 90f, 12f, 30f) }
+            { 1, new PerfilMob("Aldeão Assustado", Arquetipos.HumanoComum, 40.0f, new float[] { -50f, -100f, 50f, 300f, 300f, -100f }, 5f, 30f, 2f, 5f, false) },
+            { 2, new PerfilMob("Lobo Faminto", Arquetipos.AnimalAgressivo, 80.0f, new float[] { 250f, 400f, 0f, 0f, -50f, 0f }, 150f, 50f, 8f, 20f, false) },
+            { 3, new PerfilMob("Guarda Veterano", Arquetipos.HumanoForte, 20.0f, new float[] { 100f, 50f, 150f, 0f, 50f, 150f }, 500f, 800f, 12f, 30f, false) },
+            { 4, new PerfilMob("Bandido Oportunista", Arquetipos.Oportunista, 60.0f, new float[] { 150f, 100f, 0f, 200f, -50f, 0f }, 250f, 60f, 10f, 25f, false) },
+            { 5, new PerfilMob("Espirito Vingativo", Arquetipos.DefensorVingativo, 30.0f, new float[] { 50f, 0f, 200f, 50f, 100f, 300f }, 450f, 150f, 5f, 15f, false) },
+            { 6, new PerfilMob("Cervo de Prodigios", Arquetipos.AnimalIndefeso, 70.0f, new float[] { -200f, -200f, 0f, 400f, 200f, -100f }, 150f, 15f, 1f, 3f, true) }, // <-- Sturdy ativado!
+            { 7, new PerfilMob("Urso Territorial", Arquetipos.AnimalReativo, 30.0f, new float[] { 50f, 100f, 50f, 0f, 300f, 0f }, 250f, 120f, 20f, 50f, false) },
+            { 8, new PerfilMob("Cultista Frenetico", Arquetipos.Inimigo, 60.0f, new float[] { 300f, 150f, -50f, -100f, -200f, 200f }, 300f, 90f, 12f, 30f, false) }
         };
     }
 }

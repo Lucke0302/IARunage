@@ -122,7 +122,10 @@ public class CombatEnvironment
         }
 
         // --- INSTINTO FORÇADO DO MOB ---
-        if (!alguemAtacou && rnd.NextDouble() < arq.ChanceAgressaoInicial)
+        float fatorProximidade = arq.CicloOportunista ? 1.0f : (1.0f - (Distancia / 3.0f));
+        float chanceRealDeAtaque = arq.ChanceAgressaoInicial * fatorProximidade;
+
+        if (!alguemAtacou && rnd.NextDouble() < chanceRealDeAtaque)
         {
             if (!mobTentouAtacar) 
             {

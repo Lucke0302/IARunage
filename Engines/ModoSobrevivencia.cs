@@ -185,6 +185,9 @@ public static class ModoSobrevivencia
     {
         return new Dictionary<int, PerfilMob>
         {
+            // NOTA: os nomes aqui são usados tanto para exibição quanto para montar caminhos
+            // de arquivo via DataHandler. O DataHandler normaliza os acentos internamente
+            // antes de construir o path — veja NormalizarNome() em DataHandler.cs.
             { 1, new PerfilMob("Aldeão Assustado", Arquetipos.HumanoComum, 40.0f, new float[] { -50f, -100f, 50f, 300f, 300f, -100f }, 5f, 30f, 2f, 5f) },
             { 2, new PerfilMob("Lobo Faminto", Arquetipos.AnimalAgressivo, 80.0f, new float[] { 250f, 400f, 0f, 0f, -50f, 0f }, 150f, 50f, 8f, 20f) },
             { 3, new PerfilMob("Guarda Veterano", Arquetipos.HumanoForte, 20.0f, new float[] { 100f, 50f, 150f, 0f, 50f, 150f }, 500f, 800f, 15f, 35f) },

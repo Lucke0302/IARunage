@@ -24,6 +24,11 @@ public class CombatEnvironment
     private float mobHpInicial;
     private Random rnd = new();
 
+    // Controla o ciclo oportunista: quando true o mob prefere recuar neste turno
+    // para enganar o player, em vez de atacar. Alterna a cada ataque bem-sucedido.
+    private bool oportunistaFaseRecuo = false;
+    private int oportunistaTurnosRecuo = 0;
+
     // Dano pesado máximo do mob, normalizado para a feature de perigo
     private float mobDanoPesadoNormalizado;
 
@@ -133,6 +138,40 @@ public class CombatEnvironment
                 acaoMob = rnd.NextDouble() < 0.5 ? 3 : 4; 
                 
             mobTentouAtacar = false;
+        }
+
+        // --- CICLO OPORTUNISTA ---
+        // Arquetipos com CicloOportunista=true (Bandido) alternam fases de ataque e
+        // recuo falso para desestabilizar o player. Na fase de recuo o mob finge
+        // se afastar por 1-2 turnos e depois ataca sem aviso — mesmo que o player
+        // já tenha se aproximado. Isso força o player a aprender a não relaxar a
+        // guarda quando o Bandido recua.
+        if (arq.CicloOportunista && alguemAtacou)
+        {
+            if (oportunistaFaseRecuo)
+            {
+                oportunistaTurnosRecuo++;
+                // Recua por 1-2 turnos e então lança um ataque surpresa
+                if (oportunistaTurnosRecuo >= rnd.Next(1, 3))
+                {
+                    oportunistaFaseRecuo = false;
+                    oportunistaTurnosRecuo = 0;
+                    // Ataque surpresa: ignora distância (o Bandido é rápido)
+                    acaoMob = rnd.NextDouble() < 0.6 ? 0 : 1;
+                    mobTentouAtacar = true;
+                }
+                else
+                {
+                    acaoMob = 3; // recua
+                    mobTentouAtacar = false;
+                }
+            }
+            else if (mobTentouAtacar && rnd.NextDouble() < 0.45f)
+            {
+                // Após atacar, 45% de chance de entrar na fase de recuo falso
+                oportunistaFaseRecuo = true;
+                oportunistaTurnosRecuo = 0;
+            }
         }
 
         if (playerUsouRuna && playerCooldownRuna > 0)

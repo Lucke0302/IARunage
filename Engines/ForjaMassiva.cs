@@ -82,8 +82,11 @@ public static class ForjaMassiva
                 
                 int andarSorteado = rnd.Next(andarMin, andarMax + 1);
                 
-                // Progressão do Player
-                float pMultiplicador = 1.0f + (andarSorteado * 0.20f);
+                // Progressão do Player alinhada com o jogo real:
+                // No ModoSobrevivencia o player ganha +0.04f por sala, 5 salas/andar → +0.20f/andar.
+                // Começando de 1.0f no andar 1, no andar N o multiplicador esperado é 1.0 + (N-1)*0.20.
+                // Usamos (andar-1) para não superestimar o poder do player durante o treino global.
+                float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
                 
                 // Progressão do Inimigo
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
@@ -131,8 +134,8 @@ public static class ForjaMassiva
             {
                 int andarSorteado = rnd.Next(andarMin, andarMax + 1);
                 
-                // Progressão do Player
-                float pMultiplicador = 1.0f + (andarSorteado * 0.20f);
+                // Progressão do Player alinhada com o jogo real (mesmo cálculo do TreinarGlobal).
+                float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
                 
                 // Progressão do Inimigo
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);

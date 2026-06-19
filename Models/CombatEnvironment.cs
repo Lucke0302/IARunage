@@ -28,23 +28,44 @@ public class CombatEnvironment
     private int playerCooldownRuna = 0;
     private int playerBuffFogo = 0;
     private int mobStunturnos = 0;
-    private readonly PerfilMob perfilMob;
-    private readonly float playerVies;
-    private readonly float mobHpInicial;
+    private PerfilMob perfilMob;
+    private float playerVies;
+    private float mobHpInicial;
     private float playerMaxHP;
-    private readonly float mobMaxHP;
+    private float mobMaxHP;
     private static readonly Random rnd = Random.Shared;
 
     private bool oportunistaFaseRecuo = false;
     private int oportunistaTurnosRecuo = 0;
-    private readonly float mobDanoPesadoNormalizado;
+    private float mobDanoPesadoNormalizado;
 
-    public CombatEnvironment(PerfilMob perfil, float vies)
+    public CombatEnvironment(PerfilMob perfil, float vies) => Reset(perfil, vies);
+
+    internal void Reset(PerfilMob perfil, float vies)
     {
         perfilMob = perfil;
         playerVies = vies;
 
+        PlayerHP = 100f;
         MobHP = perfil.HpBase;
+        CombateMortal = false;
+        PlayerMultiplicador = 1.0f;
+        Distancia = 3f;
+        AuraPlayer = 0f;
+        IsGameOver = false;
+        CausaMortePlayer = "Nenhuma";
+        DanoSofridoPlayer = 0f;
+        PlayerMorreuPorAutoDano = false;
+
+        turnosPacificos = 0;
+        turnosPacificosTotal = 0;
+        alguemAtacou = false;
+        playerCooldownRuna = 0;
+        playerBuffFogo = 0;
+        mobStunturnos = 0;
+        oportunistaFaseRecuo = false;
+        oportunistaTurnosRecuo = 0;
+
         mobHpInicial = perfil.HpBase;
         mobMaxHP = perfil.HpBase;
 
@@ -95,14 +116,15 @@ public class CombatEnvironment
 
     public Reward ResolverTick(int acaoPlayer, int acaoMob)
     {
-                alguemAtacou = false;
+        alguemAtacou = false;
         bool ataqueOcorreuNoTurno = false;
 
         float rPlayer = 0f, rMob = 0f;
         float mobHpAnterior = MobHP;
         bool ultimoDanoFoiAutoDano = false;
         float danoM = 0f;
-        
+        var arq = perfilMob.Arquetipo;
+
         if (playerCooldownRuna > 0) playerCooldownRuna--;
         if (playerBuffFogo > 0) playerBuffFogo--;
 
@@ -113,7 +135,6 @@ public class CombatEnvironment
         
         bool mobTentouAtacar = (acaoMob == 0 || acaoMob == 1 || acaoMob == 5);
         bool playerUsouParry = (acaoPlayer == 7);
-        var arq = perfilMob.Arquetipo;
 
         if (mobStunturnos > 0)
         {

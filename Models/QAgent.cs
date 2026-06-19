@@ -56,6 +56,7 @@ public sealed class QAgent
     public void ForcarAmadurecimento(float pisoExploracao = 0.2f)
     {
         _taxaExploracao = Math.Max(pisoExploracao, _taxaExploracao - 0.05f);
+        _taxaExploracao = Math.Clamp(_taxaExploracao, 0.01f, 1.0f);
     }
 
     public void DefinirExploracao(float nivel) => _taxaExploracao = nivel;
@@ -82,7 +83,8 @@ public sealed class QAgent
         float invTemp = 1f / _temperatura;
         for (int i = 0; i < count; i++)
         {
-            float p = MathF.Exp((_qsBuffer[i] - maxQ) * invTemp);
+            float x = Math.Clamp((_qsBuffer[i] - maxQ) * invTemp, -80f, 80f);
+            float p = MathF.Exp(x);
             _probBuffer[i] = p;
             somaExp += p;
         }
@@ -139,6 +141,7 @@ public sealed class QAgent
         return melhor;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Aprender(in FeatureVector estadoAntigo, int acao, float recompensa,
                          in FeatureVector estadoNovo, int[]? acoesPermitidas = null)
         {
@@ -162,8 +165,12 @@ public sealed class QAgent
             if (q > maxQFuturo) maxQFuturo = q;
         }
 
+        if (!float.IsFinite(maxQFuturo)) return;
+
         float qAtual = CalcularQ(acao, estadoAntigo);
         float erroTD = recompensa + (DiscountFactor * maxQFuturo) - qAtual;
+
+        if (!float.IsFinite(erroTD)) return;
 
         // Unroll manual para 8 features
         int baseIdx = acao * NUM_FEATURES;

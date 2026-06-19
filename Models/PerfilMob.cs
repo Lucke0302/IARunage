@@ -1,30 +1,29 @@
 namespace Runage.Models;
 
-public class PerfilMob
+public readonly struct PerfilMob
 {
-    public string Nome { get; set; }
-    public Arquetipo Arquetipo { get; set; }
-    public float Temperatura { get; set; }
-    public float[] InstintosBase { get; set; }
-    public float RecompensaAbate { get; set; }
-    public float HpBase { get; set; }
-    public float DanoLeve { get; set; }
-    public float DanoPesado { get; set; }
-    public bool ResisteHitKill { get; set; } = false;
+    public string Nome { get; }
+    public Arquetipo Arquetipo { get; }
+    public float Temperatura { get; }
+    public float[] InstintosBase { get; }
+    public float RecompensaAbate { get; }
+    public float HpBase { get; }
+    public float DanoLeve { get; }
+    public float DanoPesado { get; }
+    public bool ResisteHitKill { get; }
 
-    public PerfilMob(string nome, Arquetipo arquetipo, float temp, float[] instintosBase, 
+    public PerfilMob(string nome, Arquetipo arquetipo, float temp, float[] instintosBase,
                      float recompensaAbate, float hpBase, float danoLeve, float danoPesado,
-                     bool resisteHitKill)
+                     bool resisteHitKill = false)
     {
-        Nome = nome; 
+        Nome = nome;
         Arquetipo = arquetipo;
-        Temperatura = temp; 
+        Temperatura = temp;
         InstintosBase = instintosBase;
         RecompensaAbate = recompensaAbate;
         HpBase = hpBase;
         DanoLeve = danoLeve;
         DanoPesado = danoPesado;
         ResisteHitKill = resisteHitKill;
-
     }
 }

@@ -7,6 +7,37 @@ namespace Runage.Engines;
 
 public static class ForjaMassiva
 {
+    private static class CombatEnvironmentPool
+    {
+        private const int Capacity = 16;
+        private static readonly object _lock = new();
+        private static readonly Stack<CombatEnvironment> _pool = new(Capacity);
+
+        public static CombatEnvironment Get(PerfilMob perfil, float vies)
+        {
+            lock (_lock)
+            {
+                if (_pool.Count > 0)
+                {
+                    CombatEnvironment env = _pool.Pop();
+                    env.Reset(perfil, vies);
+                    return env;
+                }
+            }
+
+            return new CombatEnvironment(perfil, vies);
+        }
+
+        public static void Return(CombatEnvironment env)
+        {
+            lock (_lock)
+            {
+                if (_pool.Count < Capacity)
+                    _pool.Push(env);
+            }
+        }
+    }
+
     public static async Task IniciarAsync(float viesValor)
     {
         Console.Clear();
@@ -172,37 +203,42 @@ public static class ForjaMassiva
 
     private static int ExecutarEpisodio(QAgent player, QAgent? mobAgente, PerfilMob perfil, float vies, float pMultiplicador, int andar)
     {
-        var env = new CombatEnvironment(perfil, vies)
+        CombatEnvironment env = CombatEnvironmentPool.Get(perfil, vies);
+        try
         {
-            CombateMortal = true
-        };
-        env.AplicarMultiplicadorPlayer(pMultiplicador);
+            env.CombateMortal = true;
+            env.AplicarMultiplicadorPlayer(pMultiplicador);
 
-        int[] acoesPermitidas = ObterAcoesPorAndar(andar);
-        const int maxTurnos = 500;
-        int turno = 0;
-        bool ativo = true;
+            int[] acoesPermitidas = ObterAcoesPorAndar(andar);
+            const int maxTurnos = 500;
+            int turno = 0;
+            bool ativo = true;
 
-        while (ativo && turno < maxTurnos)
-        {
-            turno++;
-            FeatureVector estado = env.GetFeatures();
+            while (ativo && turno < maxTurnos)
+            {
+                turno++;
+                FeatureVector estado = env.GetFeatures();
 
-            int acaoPlayer = player.EscolherAcao(estado, acoesPermitidas);
-            int acaoMob = mobAgente?.EscolherAcaoMob(estado) ?? 0;
+                int acaoPlayer = player.EscolherAcao(estado, acoesPermitidas);
+                int acaoMob = mobAgente?.EscolherAcaoMob(estado) ?? 0;
 
-            Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
-            FeatureVector novoEstado = env.GetFeatures();
+                Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
+                FeatureVector novoEstado = env.GetFeatures();
 
-            player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado, acoesPermitidas);
-            mobAgente?.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
+                player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado, acoesPermitidas);
+                mobAgente?.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
 
-            if (env.IsGameOver) ativo = false;
+                if (env.IsGameOver) ativo = false;
+            }
+
+            if (env.PlayerHP <= 0) return -1;
+            if (env.MobHP <= 0) return 1;
+            return 0;
         }
-
-        if (env.PlayerHP <= 0) return -1;
-        if (env.MobHP <= 0) return 1;
-        return 0;
+        finally
+        {
+            CombatEnvironmentPool.Return(env);
+        }
     }
 
     private static Dictionary<int, PerfilMob> ObterTodosOsMobs()

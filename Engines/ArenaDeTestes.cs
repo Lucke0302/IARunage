@@ -65,19 +65,19 @@ public static class ArenaDeTestes
                 bool lutaAtiva = true;
                 int turnosAtuais = 0;
 
-                while (lutaAtiva && turnosAtuais < maxTurnosPorLuta)
+                                while (lutaAtiva && turnosAtuais < maxTurnosPorLuta)
                 {
                     turnosAtuais++;
-                    float[] estadoBase = env.GetFeatures();
+                    FeatureVector estado = env.GetFeatures();
 
-                    int acaoPlayer = player.EscolherAcao(estadoBase);
-                    int acaoMob = mob.EscolherAcao(estadoBase);
+                    int acaoPlayer = player.EscolherAcao(estado);
+                    int acaoMob = mob.EscolherAcao(estado);
 
-                    float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
-                    float[] novoEstado = env.GetFeatures();
-                    
-                    player.Aprender(estadoBase, acaoPlayer, recompensas[0], novoEstado);
-                    mob.Aprender(estadoBase, acaoMob, recompensas[1], novoEstado);
+                    Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
+                    FeatureVector novoEstado = env.GetFeatures();
+
+                    player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado);
+                    mob.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
 
                     if (env.IsGameOver)
                     {

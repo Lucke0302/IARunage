@@ -1,7 +1,13 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Runage.Models;
 
+/// <summary>
+/// Ambiente de combate turn-based.
+/// Otimizado para ZERO alocação no hot path: GetFeatures() retorna FeatureVector (struct),
+/// ResolverTick retorna Reward (struct).
+/// </summary>
 public class CombatEnvironment
 {
     public float PlayerHP = 100f;
@@ -9,36 +15,35 @@ public class CombatEnvironment
     public bool CombateMortal = false;
     public float PlayerMultiplicador = 1.0f;
     public float Distancia = 3f;
-    public float AuraPlayer = 0f; 
+    public float AuraPlayer = 0f;
     public bool IsGameOver = false;
 
-    // --- Novas propriedades para rastreamento de morte ---
     public string CausaMortePlayer { get; private set; } = "Nenhuma";
     public float DanoSofridoPlayer { get; private set; } = 0f;
     public bool PlayerMorreuPorAutoDano { get; private set; } = false;
 
     private int turnosPacificos = 0;
     private int turnosPacificosTotal = 0;
-    private bool alguemAtacou = false; 
-    private int playerCooldownRuna = 0; 
-    private int playerBuffFogo = 0;     
+    private bool alguemAtacou = false;
+    private int playerCooldownRuna = 0;
+    private int playerBuffFogo = 0;
     private int mobStunturnos = 0;
-    private PerfilMob perfilMob;
-    private float playerVies;
-    private float mobHpInicial;
-    private float playerMaxHP; 
-    private float mobMaxHP;  
-    private Random rnd = new();
+    private readonly PerfilMob perfilMob;
+    private readonly float playerVies;
+    private readonly float mobHpInicial;
+    private float playerMaxHP;
+    private readonly float mobMaxHP;
+    private static readonly Random rnd = Random.Shared;
 
     private bool oportunistaFaseRecuo = false;
     private int oportunistaTurnosRecuo = 0;
-    private float mobDanoPesadoNormalizado;
+    private readonly float mobDanoPesadoNormalizado;
 
     public CombatEnvironment(PerfilMob perfil, float vies)
     {
         perfilMob = perfil;
-        playerVies = vies; 
-        
+        playerVies = vies;
+
         MobHP = perfil.HpBase;
         mobHpInicial = perfil.HpBase;
         mobMaxHP = perfil.HpBase;
@@ -46,7 +51,7 @@ public class CombatEnvironment
         float danoPesadoReal = perfil.DanoPesado * perfil.Arquetipo.MultiplicadorDano;
         mobDanoPesadoNormalizado = Math.Clamp(danoPesadoReal / 150f, 0f, 1f);
 
-        float fatorHP   = (vies < 0.5f) ? (1.5f - vies) : 1.0f;
+        float fatorHP = (vies < 0.5f) ? (1.5f - vies) : 1.0f;
         float fatorDano = (vies > 0.5f) ? (0.5f + vies) : 1.0f;
 
         playerMaxHP = 100f * fatorHP;
@@ -57,42 +62,46 @@ public class CombatEnvironment
     public void AplicarMultiplicadorPlayer(float multiplicador)
     {
         PlayerMultiplicador *= multiplicador;
-        playerMaxHP *= multiplicador;
-        PlayerHP = Math.Min(playerMaxHP, PlayerHP * multiplicador);
+        float newMax = playerMaxHP * multiplicador;
+        PlayerHP = Math.Min(newMax, PlayerHP * multiplicador);
+        playerMaxHP = newMax;
     }
 
-    private float CalcularDanoOrganico(float baseDamage)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float CalcularDanoOrganico(float baseDamage)
     {
-        float variacao = (float)(rnd.NextDouble() * 0.4 + 0.8); 
-        bool critico = rnd.NextDouble() < 0.1; 
+        float variacao = (float)(rnd.NextDouble() * 0.4 + 0.8);
+        bool critico = rnd.NextDouble() < 0.1;
         return baseDamage * variacao * (critico ? 2.0f : 1.0f);
     }
 
-    public float[] GetFeatures()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FeatureVector GetFeatures()
     {
-        float hpPlayerNormalizado = Math.Clamp(PlayerHP / playerMaxHP, 0f, 1f);
-        float hpMobNormalizado = Math.Clamp(MobHP / mobMaxHP, 0f, 1f);
-        return new float[] {
-            1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f),                            
-            hpPlayerNormalizado,
-            hpMobNormalizado,
-            (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f,
-            Math.Clamp(turnosPacificos / 6.0f, 0f, 1f),
-            (playerCooldownRuna == 0) ? 1.0f : 0.0f,
-            (mobStunturnos > 0) ? 1.0f : 0.0f,
-            mobDanoPesadoNormalizado
-        };
+        float hpPlayerNorm = Math.Clamp(PlayerHP / playerMaxHP, 0f, 1f);
+        float hpMobNorm = Math.Clamp(MobHP / mobMaxHP, 0f, 1f);
+
+        return new FeatureVector(
+            f0: 1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f),
+            f1: hpPlayerNorm,
+            f2: hpMobNorm,
+            f3: (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f,
+            f4: Math.Clamp(turnosPacificos / 6.0f, 0f, 1f),
+            f5: (playerCooldownRuna == 0) ? 1.0f : 0.0f,
+            f6: (mobStunturnos > 0) ? 1.0f : 0.0f,
+            f7: mobDanoPesadoNormalizado
+        );
     }
 
-    public float[] ResolverTick(int acaoPlayer, int acaoMob)
+    public Reward ResolverTick(int acaoPlayer, int acaoMob)
     {
-        alguemAtacou = false;
+                alguemAtacou = false;
         bool ataqueOcorreuNoTurno = false;
 
-        float[] recompensas = { 0f, 0f }; 
+        float rPlayer = 0f, rMob = 0f;
         float mobHpAnterior = MobHP;
         bool ultimoDanoFoiAutoDano = false;
-        float danoM = 0f; // será preenchido se o mob atacar
+        float danoM = 0f;
         
         if (playerCooldownRuna > 0) playerCooldownRuna--;
         if (playerBuffFogo > 0) playerBuffFogo--;
@@ -118,15 +127,15 @@ public class CombatEnvironment
         {
             if (mobTentouAtacar)
             {
-                recompensas[0] += 60f;
-                recompensas[1] -= 30f;
+                rPlayer += 60f;
+                rMob -= 30f;
                 mobStunturnos = 1;
                 mobTentouAtacar = false;
                 ataqueOcorreuNoTurno = true;
             }
             else
             {
-                recompensas[0] -= 15f;
+                rPlayer -= 15f;
             }
         }
 
@@ -190,14 +199,14 @@ public class CombatEnvironment
             // Penalidade extra se o mob já estiver com HP baixo (anti-overkill)
             if (MobHP < mobHpInicial * 0.3f)
             {
-                recompensas[0] -= 100f * playerVies;
+                rPlayer -= 100f * playerVies;
             }
 
             if (acaoMob == 3)
             { 
-                recompensas[0] -= (custoHp * 2.5f);
-                recompensas[0] -= 10f; 
-                recompensas[1] += 40f; 
+                rPlayer -= (custoHp * 2.5f);
+                rPlayer -= 10f; 
+                rMob += 40f; 
             } 
             else 
             { 
@@ -205,10 +214,10 @@ public class CombatEnvironment
                 MobHP -= danoSobrecarga; 
                 float danoEfetivo = Math.Min(danoSobrecarga, hpMobAntesSobrecarga);
                 float overkill = Math.Max(0f, danoSobrecarga - hpMobAntesSobrecarga);
-                recompensas[0] += (danoEfetivo - overkill - custoHp) * playerVies; 
-                recompensas[1] -= 80f; 
+                rPlayer += (danoEfetivo - overkill - custoHp) * playerVies; 
+                rMob -= 80f; 
                 float fraquezaMob = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
-                recompensas[0] -= 300f * fraquezaMob;
+                rPlayer -= 300f * fraquezaMob;
             }
         }
 
@@ -219,7 +228,7 @@ public class CombatEnvironment
             {
                 AuraPlayer -= 50f; 
                 float recompensaAgressao = -1500f * (1.0f - playerVies);
-                recompensas[0] += recompensaAgressao;
+                rPlayer += recompensaAgressao;
                 alguemAtacou = true;
                 ataqueOcorreuNoTurno = true;
 
@@ -235,7 +244,7 @@ public class CombatEnvironment
                 alguemAtacou = true;
                 ataqueOcorreuNoTurno = true;
                 float punicaoMob = -2500f * (1.0f - arq.ChanceAgressaoInicial);
-                recompensas[1] += punicaoMob;
+                rMob += punicaoMob;
             }
         }
 
@@ -255,8 +264,8 @@ public class CombatEnvironment
 
             float recompensaPacifica = Math.Max(0f, 20f - (turnosPacificosTotal * 1.5f));
             float fatorPaz = Math.Clamp(1.0f - playerVies, 0f, 1f);
-            recompensas[0] += recompensaPacifica * fatorPaz + (-10f) * (1f - fatorPaz); 
-            recompensas[1] += recompensaPacifica; 
+            rPlayer += recompensaPacifica * fatorPaz + (-10f) * (1f - fatorPaz); 
+            rMob += recompensaPacifica; 
 
             bool travaAtivada = CombateMortal && (alguemAtacou || arq.ChanceAgressaoInicial >= 0.8f);
 
@@ -264,8 +273,8 @@ public class CombatEnvironment
             {
                 IsGameOver = true;
                 float fatorFugaParcial = Math.Clamp(1.0f - playerVies, 0f, 1f);
-                recompensas[0] += perfilMob.RecompensaAbate * 0.8f * fatorFugaParcial; 
-                return recompensas;
+                rPlayer += perfilMob.RecompensaAbate * 0.8f * fatorFugaParcial; 
+                return new Reward(rPlayer, rMob);
             }
 
             if (turnosPacificos >= 6 && !travaAtivada) 
@@ -280,9 +289,9 @@ public class CombatEnvironment
                     float bonusBase = Math.Max(0f, 120f - (turnosPacificosTotal * 4.0f));
                     bonusEmpateFinal = bonusBase + (-200f - bonusBase) * t;
                 }
-                recompensas[0] += bonusEmpateFinal;
-                recompensas[1] += 120f * (1.0f - arq.ChanceAgressaoInicial);
-                return recompensas;
+                rPlayer += bonusEmpateFinal;
+                rMob += 120f * (1.0f - arq.ChanceAgressaoInicial);
+                return new Reward(rPlayer, rMob);
             }
         }
         else if (!IsGameOver)
@@ -291,20 +300,20 @@ public class CombatEnvironment
         }
 
         if (mobPacifico && arq.ChanceAgressaoInicial >= 0.6f)
-            recompensas[1] -= 30f;
+            rMob -= 30f;
 
         if (mobTentouAtacar && !playerAgressivo && arq.ChanceAgressaoInicial < 0.3f)
         {
             float grauDefensivo = 1.0f - (arq.ChanceAgressaoInicial / 0.3f);
-            recompensas[1] -= 800f * grauDefensivo;
+            rMob -= 800f * grauDefensivo;
         }
         if (acaoPlayer == 4 && !mobPacifico)
-            recompensas[0] -= turnosPacificosTotal * 0.8f;
+            rPlayer -= turnosPacificosTotal * 0.8f;
 
         if (!IsGameOver && playerPacifico && MobHP >= mobHpInicial * 0.5f)
         {
             float pressaoInacao = 8f * (MobHP / mobHpInicial) * playerVies;
-            recompensas[0] -= pressaoInacao;
+            rPlayer -= pressaoInacao;
         }
 
         if (turnosPacificos > 0 && rnd.NextDouble() < arq.ChanceAtaqueAposEmpate)
@@ -336,61 +345,61 @@ public class CombatEnvironment
             playerCooldownRuna = 5;
             playerBuffFogo = 3;
             float danoRuna = CalcularDanoOrganico(20f) * PlayerMultiplicador;
-            if (acaoMob == 3) { recompensas[0] -= 10f; recompensas[1] += 40f; } 
+            if (acaoMob == 3) { rPlayer -= 10f; rMob += 40f; } 
             else { 
                 float hpMobAntesRuna = MobHP;
                 MobHP -= danoRuna;
                 float overkillRuna = Math.Max(0f, danoRuna - hpMobAntesRuna);
                 float fraquezaMobRuna = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
-                recompensas[0] -= 80f * fraquezaMobRuna * Math.Clamp(overkillRuna / Math.Max(1f, hpMobAntesRuna), 0f, 1f);
-                recompensas[0] += 55f * playerVies; 
-                recompensas[1] -= 60f; 
+                rPlayer -= 80f * fraquezaMobRuna * Math.Clamp(overkillRuna / Math.Max(1f, hpMobAntesRuna), 0f, 1f);
+                rPlayer += 55f * playerVies; 
+                rMob -= 60f; 
             }
         }
 
         // RESOLUÇÃO DE DANO
         if (Distancia > 0)
         {
-            if (playerAtacouBase) recompensas[0] -= 5f; 
-            if (mobTentouAtacar) recompensas[1] -= 5f;
+            if (playerAtacouBase) rPlayer -= 5f; 
+            if (mobTentouAtacar) rMob -= 5f;
         }
         else
         {
             if (playerAtacouBase)
             {
-                if (acaoPlayer == 1) recompensas[0] -= 15f; 
+                if (acaoPlayer == 1) rPlayer -= 15f; 
 
                 float baseDano = (acaoPlayer == 0) ? 10f : 30f;
                 if (playerBuffFogo > 0) baseDano *= 1.5f; 
                 float danoP = CalcularDanoOrganico(baseDano) * PlayerMultiplicador;
 
-                if (acaoMob == 3) { recompensas[0] -= 10f; recompensas[1] += 20f; } 
+                if (acaoMob == 3) { rPlayer -= 10f; rMob += 20f; } 
                 else if (acaoMob == 2) 
                 {
                     if (acaoPlayer == 1)
                     {
                         MobHP -= danoP;
-                        recompensas[0] += (danoP * 2f) * playerVies;
-                        recompensas[0] += 20f;
-                        recompensas[1] -= 60f;
+                        rPlayer += (danoP * 2f) * playerVies;
+                        rPlayer += 20f;
+                        rMob -= 60f;
                     }
                     else
                     {
-                        recompensas[0] -= 10f;
-                        recompensas[1] += 10f;
+                        rPlayer -= 10f;
+                        rMob += 10f;
                         if (rnd.NextDouble() < arq.ChanceContraAtaque)
                         {
                             float danoContra = CalcularDanoOrganico(danoP * arq.MultiplicadorContraAtaque);
                             PlayerHP -= danoContra;
                             ultimoDanoFoiAutoDano = false;
-                            recompensas[0] -= danoContra * 1.2f;
+                            rPlayer -= danoContra * 1.2f;
                         }
                     }
                 } 
                 else { 
                     MobHP -= danoP; 
-                    recompensas[0] += (danoP * 2f) * playerVies; 
-                    recompensas[1] -= 40f; 
+                    rPlayer += (danoP * 2f) * playerVies; 
+                    rMob -= 40f; 
                 }
             }
 
@@ -400,15 +409,15 @@ public class CombatEnvironment
                 baseDano *= arq.MultiplicadorDano;
                 danoM = CalcularDanoOrganico(baseDano);
 
-                if (acaoPlayer == 3) { recompensas[1] -= 10f; recompensas[0] += 20f; } 
-                else if (acaoPlayer == 2) { recompensas[1] -= 10f; recompensas[0] += 10f; } 
+                if (acaoPlayer == 3) { rMob -= 10f; rPlayer += 20f; } 
+                else if (acaoPlayer == 2) { rMob -= 10f; rPlayer += 10f; } 
                 else 
                 { 
                     PlayerHP -= danoM; 
                     ultimoDanoFoiAutoDano = false;
                     float multiplicadorSadismo = 1.0f + arq.ChanceAgressaoInicial; 
-                    recompensas[1] += (danoM * 2f) * multiplicadorSadismo; 
-                    recompensas[0] -= (danoM * 2.5f); 
+                    rMob += (danoM * 2f) * multiplicadorSadismo; 
+                    rPlayer -= (danoM * 2.5f); 
                 }
             }
         }
@@ -434,8 +443,8 @@ public class CombatEnvironment
                 PlayerMorreuPorAutoDano = false;
                 DanoSofridoPlayer = danoM;
             }
-            recompensas[0] -= pesoMorte; 
-            recompensas[1] += 200f; 
+            rPlayer -= pesoMorte; 
+            rMob += 200f; 
         }
 
         float danoCausadoNesteTurno = mobHpAnterior - MobHP;
@@ -448,12 +457,12 @@ public class CombatEnvironment
 
         if (MobHP <= 0) 
         {
-            recompensas[1] -= 150f; 
-            recompensas[0] += (perfilMob.RecompensaAbate * playerVies); 
+            rMob -= 150f; 
+            rPlayer += (perfilMob.RecompensaAbate * playerVies); 
             float curaAbate = 20f * playerVies * PlayerMultiplicador;
             PlayerHP = Math.Min(playerMaxHP, PlayerHP + curaAbate); 
         }
 
-        return recompensas;
+        return new Reward(rPlayer, rMob);
     }
 }

@@ -1,142 +1,240 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Runage.Models;
 
-public class QAgent
+/// <summary>
+/// Agente Q-Learning com aproximação linear de função.
+/// Otimizado para ZERO alocação no hot path (mobile-first):
+/// - Pesos em array flat [NUM_ACOES * NUM_FEATURES] para acesso contíguo.
+/// - Buffers de Q-values reutilizáveis (pré-alocados), sem new float[] no hot path.
+/// - FeatureVector (struct) em vez de float[].
+/// </summary>
+public sealed class QAgent
 {
-    private const int NUM_ACOES = 8;
-    private const int NUM_FEATURES = 8; 
-    private float[,] pesos = new float[NUM_ACOES, NUM_FEATURES];
-    private float learningRate = 0.05f; 
-    private float discountFactor = 0.95f; 
-    private float taxaExploracao = 1.0f;  
-    private float decaimentoExploracao = 0.9995f; 
-    private float temperatura;
-    private Random rnd = new();
+    public const int NUM_ACOES = 8;
+    public const int NUM_FEATURES = 8;
 
-    // Máscara fixa para mobs (ações 0-4 apenas)
+    private readonly float[] _pesosFlat = new float[NUM_ACOES * NUM_FEATURES];
+
+    private const float LearningRate = 0.05f;
+    private const float DiscountFactor = 0.95f;
+    private const float DecaimentoExploracao = 0.9995f;
+    private const float PisoExploracao = 0.08f;
+
+    private float _taxaExploracao = 1.0f;
+    private readonly float _temperatura;
+
+    private static readonly Random Rnd = Random.Shared;
+
     private static readonly int[] AcoesMob = { 0, 1, 2, 3, 4 };
     private static readonly int[] TodasAsAcoes = { 0, 1, 2, 3, 4, 5, 6, 7 };
 
-    public QAgent(float temp, float[]? instintosBase = null)
-    {
-        temperatura = temp;
-        if (instintosBase != null)
+    // Buffers reutilizáveis (pré-alocados) — eliminam new float[] no hot path
+    private readonly float[] _qsBuffer = new float[NUM_ACOES];
+    private readonly float[] _probBuffer = new float[NUM_ACOES];
+
+    public QAgent(float temperatura, float[]? instintosBase = null)
         {
-            for (int a = 0; a < instintosBase.Length; a++)
+            if (temperatura < 0.01f)
+                throw new ArgumentOutOfRangeException(
+                    nameof(temperatura), temperatura,
+                    "Temperatura deve ser >= 0.01f para evitar overflow numérico no softmax.");
+
+            _temperatura = temperatura;
+
+            if (instintosBase != null)
             {
-                if (a < NUM_ACOES) pesos[a, 5] = instintosBase[a]; 
+                int limit = Math.Min(instintosBase.Length, NUM_ACOES);
+                for (int a = 0; a < limit; a++)
+                    _pesosFlat[a * NUM_FEATURES + 5] = instintosBase[a];
             }
         }
-    }
 
-    public void ForcarAmadurecimento(float pisoExploracao = 0.2f) 
-    { 
-        taxaExploracao = Math.Max(pisoExploracao, taxaExploracao - 0.05f); 
-    }
+    public Span<float> PesosSpan() => new(_pesosFlat);
 
-    public void DefinirExploracao(float nivel)
+    public void ForcarAmadurecimento(float pisoExploracao = 0.2f)
     {
-        taxaExploracao = nivel;
+        _taxaExploracao = Math.Max(pisoExploracao, _taxaExploracao - 0.05f);
     }
 
-    // Método para escolha de ação com máscara opcional
-    public int EscolherAcao(float[] features, int[]? acoesPermitidas = null)
+    public void DefinirExploracao(float nivel) => _taxaExploracao = nivel;
+
+    // -------------------- HOT PATH --------------------
+
+    public int EscolherAcao(in FeatureVector features, int[]? acoesPermitidas = null)
     {
         int[] acoes = acoesPermitidas ?? TodasAsAcoes;
+        int count = acoes.Length;
 
-        if (rnd.NextDouble() < taxaExploracao) return acoes[rnd.Next(acoes.Length)];
+        if (Rnd.NextDouble() < _taxaExploracao)
+            return acoes[Rnd.Next(count)];
 
-        float[] qs = new float[acoes.Length];
         float maxQ = float.MinValue;
-
-        for (int i = 0; i < acoes.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            qs[i] = CalcularQ(acoes[i], features);
-            if (qs[i] > maxQ) maxQ = qs[i];
+            float q = CalcularQ(acoes[i], features);
+            _qsBuffer[i] = q;
+            if (q > maxQ) maxQ = q;
         }
 
         float somaExp = 0f;
-        float[] probabilidades = new float[acoes.Length];
-
-        for (int i = 0; i < acoes.Length; i++)
+        float invTemp = 1f / _temperatura;
+        for (int i = 0; i < count; i++)
         {
-            probabilidades[i] = (float)Math.Exp((qs[i] - maxQ) / temperatura);
-            somaExp += probabilidades[i];
+            float p = MathF.Exp((_qsBuffer[i] - maxQ) * invTemp);
+            _probBuffer[i] = p;
+            somaExp += p;
         }
 
-        double roleta = rnd.NextDouble() * somaExp;
-        float acumulado = 0f;
-
-        for (int i = 0; i < acoes.Length; i++)
+        double roleta = Rnd.NextDouble() * somaExp;
+        float acum = 0f;
+        for (int i = 0; i < count; i++)
         {
-            acumulado += probabilidades[i];
-            if (roleta <= acumulado) return acoes[i];
+            acum += _probBuffer[i];
+            if (roleta <= acum) return acoes[i];
         }
 
-        return ObterMelhorAcao(features, acoes);
+        return ObterMelhorAcao(features, acoes, count, _qsBuffer);
     }
 
-    // Sobrecarga para escolha de ação com máscara fixa para mob
-    public int EscolherAcaoMob(float[] features)
+    public int EscolherAcaoMob(in FeatureVector features) =>
+        EscolherAcao(features, AcoesMob);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private float CalcularQ(int acao, in FeatureVector features)
     {
-        return EscolherAcao(features, AcoesMob);
+        int baseIdx = acao * NUM_FEATURES;
+        return _pesosFlat[baseIdx]     * features.F0
+             + _pesosFlat[baseIdx + 1] * features.F1
+             + _pesosFlat[baseIdx + 2] * features.F2
+             + _pesosFlat[baseIdx + 3] * features.F3
+             + _pesosFlat[baseIdx + 4] * features.F4
+             + _pesosFlat[baseIdx + 5] * features.F5
+             + _pesosFlat[baseIdx + 6] * features.F6
+             + _pesosFlat[baseIdx + 7] * features.F7;
     }
 
-    private int ObterMelhorAcao(float[] features, int[]? acoesPermitidas = null)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int ObterMelhorAcao(in FeatureVector features, int[] acoes, int count, float[]? buffer = null)
     {
-        int[] acoes = acoesPermitidas ?? TodasAsAcoes;
-        int melhorAcao = acoes[0];
+        int melhor = acoes[0];
         float maxQ = float.MinValue;
-        foreach (int a in acoes)
+
+        if (buffer != null)
         {
-            float q = CalcularQ(a, features);
-            if (q > maxQ) { maxQ = q; melhorAcao = a; }
+            for (int i = 0; i < count; i++)
+            {
+                if (buffer[i] > maxQ) { maxQ = buffer[i]; melhor = acoes[i]; }
+            }
         }
-        return melhorAcao;
+        else
+        {
+            for (int i = 0; i < count; i++)
+            {
+                float q = CalcularQ(acoes[i], features);
+                if (q > maxQ) { maxQ = q; melhor = acoes[i]; }
+            }
+        }
+        return melhor;
     }
 
-    private float CalcularQ(int acao, float[] features)
-    {
-        float q = 0;
-        for (int i = 0; i < NUM_FEATURES; i++) q += pesos[acao, i] * features[i];
-        return q;
-    }
+    public void Aprender(in FeatureVector estadoAntigo, int acao, float recompensa,
+                         in FeatureVector estadoNovo, int[]? acoesPermitidas = null)
+        {
+        if (acao < 0 || acao >= NUM_ACOES)
+            ThrowAcaoInvalida(acao);
 
-    public void Aprender(float[] estadoAntigo, int acao, float recompensa, float[] estadoNovo, int[]? acoesPermitidas = null)
-    {
-        float maxQFuturo = CalcularQ(ObterMelhorAcao(estadoNovo, acoesPermitidas), estadoNovo);
+        if (float.IsInfinity(recompensa) || float.IsNaN(recompensa))
+            ThrowRecompensaInvalida(recompensa);
+
+        if (NaoEhFinita(estadoAntigo) || NaoEhFinita(estadoNovo))
+            return;
+
+        int[] acoes = acoesPermitidas ?? TodasAsAcoes;
+        int count = acoes.Length;
+
+        // MaxQ futuro iterando sem alocar arrays
+        float maxQFuturo = float.MinValue;
+        for (int i = 0; i < count; i++)
+        {
+            float q = CalcularQ(acoes[i], estadoNovo);
+            if (q > maxQFuturo) maxQFuturo = q;
+        }
+
         float qAtual = CalcularQ(acao, estadoAntigo);
-        float erroTD = recompensa + (discountFactor * maxQFuturo) - qAtual;
+        float erroTD = recompensa + (DiscountFactor * maxQFuturo) - qAtual;
 
-        for (int i = 0; i < NUM_FEATURES; i++)
-        {
-            float variacaoPeso = learningRate * erroTD * estadoAntigo[i];
-            pesos[acao, i] = Math.Clamp(pesos[acao, i] + variacaoPeso, -10000f, 10000f); 
-        }
+        // Unroll manual para 8 features
+        int baseIdx = acao * NUM_FEATURES;
+        float lr = LearningRate * erroTD;
 
-        if (taxaExploracao > 0.08f) taxaExploracao *= decaimentoExploracao;
+        _pesosFlat[baseIdx]     = Math.Clamp(_pesosFlat[baseIdx]     + lr * estadoAntigo.F0, -10000f, 10000f);
+        _pesosFlat[baseIdx + 1] = Math.Clamp(_pesosFlat[baseIdx + 1] + lr * estadoAntigo.F1, -10000f, 10000f);
+        _pesosFlat[baseIdx + 2] = Math.Clamp(_pesosFlat[baseIdx + 2] + lr * estadoAntigo.F2, -10000f, 10000f);
+        _pesosFlat[baseIdx + 3] = Math.Clamp(_pesosFlat[baseIdx + 3] + lr * estadoAntigo.F3, -10000f, 10000f);
+        _pesosFlat[baseIdx + 4] = Math.Clamp(_pesosFlat[baseIdx + 4] + lr * estadoAntigo.F4, -10000f, 10000f);
+        _pesosFlat[baseIdx + 5] = Math.Clamp(_pesosFlat[baseIdx + 5] + lr * estadoAntigo.F5, -10000f, 10000f);
+        _pesosFlat[baseIdx + 6] = Math.Clamp(_pesosFlat[baseIdx + 6] + lr * estadoAntigo.F6, -10000f, 10000f);
+        _pesosFlat[baseIdx + 7] = Math.Clamp(_pesosFlat[baseIdx + 7] + lr * estadoAntigo.F7, -10000f, 10000f);
+
+        if (_taxaExploracao > PisoExploracao)
+            _taxaExploracao *= DecaimentoExploracao;
     }
+
+    // -------------------- Serialização --------------------
 
     public float[][] ExportarPesos()
     {
-        float[][] export = new float[NUM_ACOES][];
+        var export = new float[NUM_ACOES][];
         for (int i = 0; i < NUM_ACOES; i++)
         {
-            export[i] = new float[NUM_FEATURES];
-            for (int j = 0; j < NUM_FEATURES; j++) export[i][j] = pesos[i, j];
+            var linha = new float[NUM_FEATURES];
+            int baseIdx = i * NUM_FEATURES;
+            for (int j = 0; j < NUM_FEATURES; j++)
+                linha[j] = _pesosFlat[baseIdx + j];
+            export[i] = linha;
         }
         return export;
     }
 
     public void ImportarPesos(float[][] pesosCarregados)
     {
-        for (int i = 0; i < NUM_ACOES; i++)
+        if (pesosCarregados == null || pesosCarregados.Length != NUM_ACOES)
+            throw new ArgumentException($"Esperado {NUM_ACOES} ações, recebido {pesosCarregados?.Length ?? 0}.");
+        if (pesosCarregados[0].Length != NUM_FEATURES)
+            throw new ArgumentException($"Esperado {NUM_FEATURES} features, recebido {pesosCarregados[0].Length}.");
+
+                        for (int i = 0; i < NUM_ACOES; i++)
         {
+            int baseIdx = i * NUM_FEATURES;
             for (int j = 0; j < NUM_FEATURES; j++)
-            {
-                pesos[i, j] = pesosCarregados[i][j];
-            }
+                _pesosFlat[baseIdx + j] = pesosCarregados[i][j];
         }
     }
+
+    // -------------------- Sanitização & Guardas --------------------
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool NaoEhFinita(in FeatureVector f)
+    {
+        return float.IsNaN(f.F0)     || float.IsInfinity(f.F0)
+            || float.IsNaN(f.F1)     || float.IsInfinity(f.F1)
+            || float.IsNaN(f.F2)     || float.IsInfinity(f.F2)
+            || float.IsNaN(f.F3)     || float.IsInfinity(f.F3)
+            || float.IsNaN(f.F4)     || float.IsInfinity(f.F4)
+            || float.IsNaN(f.F5)     || float.IsInfinity(f.F5)
+            || float.IsNaN(f.F6)     || float.IsInfinity(f.F6)
+            || float.IsNaN(f.F7)     || float.IsInfinity(f.F7);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowAcaoInvalida(int acao) =>
+        throw new ArgumentOutOfRangeException(nameof(acao), acao,
+            $"Ação deve estar no intervalo [0-{NUM_ACOES - 1}], recebido {acao}.");
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowRecompensaInvalida(float recompensa) =>
+        throw new ArgumentOutOfRangeException(nameof(recompensa), recompensa,
+            "Recompensa não pode ser NaN ou Infinity.");
 }

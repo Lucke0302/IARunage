@@ -7,14 +7,37 @@ namespace Runage.Engines;
 
 public static class ModoSobrevivencia
 {
-    public static void Iniciar(float viesValor)
+    // Cache estático de máscaras de ações — evita List + ToArray a cada sala
+    private static readonly int[][] AcoesPorAndarCache;
+
+    static ModoSobrevivencia()
+    {
+        const int maxAndar = 100;
+        AcoesPorAndarCache = new int[maxAndar + 1][];
+        for (int andar = 0; andar <= maxAndar; andar++)
+        {
+            var lista = new System.Collections.Generic.List<int>(6) { 0, 1, 2, 3, 4, 5 };
+            if (andar >= 5) lista.Add(7);
+            if (andar >= 10) lista.Add(6);
+            AcoesPorAndarCache[andar] = lista.ToArray();
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static int[] ObterAcoes(int andar)
+    {
+        int idx = Math.Clamp(andar, 0, AcoesPorAndarCache.Length - 1);
+        return AcoesPorAndarCache[idx];
+    }
+
+    public static async Task IniciarAsync(float viesValor)
     {
         Console.Clear();
         Console.WriteLine("==================================================");
         Console.WriteLine(" MANOPLA DE PRODÍGIOS (MODO SOBREVIVÊNCIA) ");
         Console.WriteLine("==================================================\n");
 
-        float[][]? pesosGlobais = DataHandler.CarregarPesosPlayer(viesValor, "pesos_Global.json");
+        float[][]? pesosGlobais = await DataHandler.CarregarPesosPlayerAsync(viesValor, "pesos_Global.json");
         if (pesosGlobais == null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
@@ -53,12 +76,7 @@ public static class ModoSobrevivencia
             {
                 PerfilMob perfilBase = SortearNpc(tensaoDoAndar, dicionarioMobs, rnd);
 
-                // Ações base 0-5 sempre disponíveis; Parry (7) desbloqueia no andar 5+,
-                // Sobrecarga (6) desbloqueia no andar 10+
-                List<int> acoesDesbloqueadas = new() { 0, 1, 2, 3, 4, 5 };
-                if (andar >= 5) acoesDesbloqueadas.Add(7);
-                if (andar >= 10) acoesDesbloqueadas.Add(6);
-                int[] acoesPermitidas = acoesDesbloqueadas.ToArray();
+                    int[] acoesPermitidas = ObterAcoes(andar);
                 
                 // Clona o mob para não poluir o dicionário base
                 PerfilMob inimigo = new PerfilMob(perfilBase.Nome, perfilBase.Arquetipo, perfilBase.Temperatura, 
@@ -70,10 +88,8 @@ public static class ModoSobrevivencia
 
                 Console.Write($"Sala {sala}/5: {inimigo.Nome} -> ");
 
-                Console.Write($"Sala {sala}/5: {inimigo.Nome} -> ");
-
                 // Puxando o novo retorno de Tupla
-                var resultado = ExecutarCombate(viesValor, pesosGlobais, inimigo, playerMultiplicador, acoesPermitidas);
+                var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, inimigo, playerMultiplicador, acoesPermitidas);
                 if (!resultado.sobreviveu)
                 {
                     vidas--;
@@ -114,18 +130,25 @@ public static class ModoSobrevivencia
         Console.ReadLine();
     }
 
-    private static (bool sobreviveu, string detalhe) ExecutarCombate(float viesValor, float[][] pesosGlobais, PerfilMob inimigo, float pMultiplicador, int[] acoesPermitidas)
+    private static async Task<(bool sobreviveu, string detalhe)> ExecutarCombateAsync(
+        float viesValor, 
+        float[][] pesosGlobais, 
+        PerfilMob inimigo, 
+        float pMultiplicador, 
+        int[] acoesPermitidas)
     {
         QAgent player = new QAgent(15.0f, null);
         player.ImportarPesos(pesosGlobais);
 
-        float[][]? pesosEspecificos = DataHandler.CarregarPesosPlayer(viesValor, $"pesos_{inimigo.Nome.Replace(" ", "_")}.json");
+        // Carregamento assíncrono dos pesos específicos
+        float[][]? pesosEspecificos = await DataHandler.CarregarPesosPlayerAsync(viesValor, $"pesos_{inimigo.Nome.Replace(" ", "_")}.json");
         if (pesosEspecificos != null) player.ImportarPesos(pesosEspecificos);
 
         player.DefinirExploracao(0.05f);
 
         QAgent mob = new QAgent(inimigo.Temperatura, inimigo.InstintosBase);
-        float[][]? pesosColmeia = DataHandler.CarregarPesosNPC(inimigo.Nome, viesValor);
+        // Carregamento assíncrono dos pesos da colmeia
+        float[][]? pesosColmeia = await DataHandler.CarregarPesosNPCAsync(inimigo.Nome, viesValor);
         if (pesosColmeia != null) mob.ImportarPesos(pesosColmeia);
         mob.DefinirExploracao(0.05f);
 
@@ -133,20 +156,22 @@ public static class ModoSobrevivencia
         env.CombateMortal = true;
         env.AplicarMultiplicadorPlayer(pMultiplicador);
         
-        bool lutaAtiva = true;
-        int turnosAtuais = 0;
+                
+        const int maxTurnos = 1000;
+        int turno = 0;
+        bool ativo = true;
 
-        while (lutaAtiva && turnosAtuais < 1000)
+        while (ativo && turno < maxTurnos)
         {
-            turnosAtuais++;
-            float[] estadoBase = env.GetFeatures();
+            turno++;
+            FeatureVector estado = env.GetFeatures();
 
-            int acaoPlayer = player.EscolherAcao(estadoBase, acoesPermitidas);
-            int acaoMob = mob.EscolherAcaoMob(estadoBase);
+            int acaoPlayer = player.EscolherAcao(estado, acoesPermitidas);
+            int acaoMob = mob.EscolherAcaoMob(estado);
 
-            float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
+            env.ResolverTick(acaoPlayer, acaoMob);
 
-            if (env.IsGameOver) lutaAtiva = false;
+            if (env.IsGameOver) ativo = false;
         }
 
         if (env.PlayerHP <= 0) 
@@ -160,23 +185,23 @@ public static class ModoSobrevivencia
         if (env.MobHP <= 0) 
             return (true, "Inimigo Abatido ⚔️");
         
-        if (turnosAtuais >= 1000) 
+        if (turno >= 1000) 
             return (true, "Sobreviveu por Exaustão de Tempo ⏳");
             
         return (true, "Resolução Pacífica ou Fuga 🕊️/🏃");
     }
 
-    private static PerfilMob SortearNpc(int tensao, Dictionary<int, PerfilMob> dic, Random rnd)
+        private static PerfilMob SortearNpc(int tensao, Dictionary<int, PerfilMob> dic, Random rnd)
     {
-        List<int> idsPossiveis = new List<int>();
+        int[] idsPossiveis = tensao switch
+        {
+            <= 3 => new[] { 1, 6 },
+            <= 6 => new[] { 2, 4 },
+            <= 9 => new[] { 3, 7 },
+            _    => new[] { 5, 8 }
+        };
 
-        if (tensao <= 3) idsPossiveis.AddRange(new[] { 1, 6 });       // Aldeão, Cervo
-        else if (tensao <= 6) idsPossiveis.AddRange(new[] { 2, 4 });  // Lobo, Bandido
-        else if (tensao <= 9) idsPossiveis.AddRange(new[] { 3, 7 });  // Guarda, Urso
-        else idsPossiveis.AddRange(new[] { 5, 8 });                   // Chefe: Espírito, Cultista
-
-        int idSorteado = idsPossiveis[rnd.Next(idsPossiveis.Count)];
-        return dic[idSorteado];
+        return dic[idsPossiveis[rnd.Next(idsPossiveis.Length)]];
     }
 
    private static Dictionary<int, PerfilMob> ObterTodosOsMobs()

@@ -2,10 +2,10 @@ namespace Runage.Models;
 
 public class Arquetipo
 {
-    public string Nome;
+    public string Nome { get; init; }
 
     // --- AGRESSÃO ---
-    public float ChanceAgressaoInicial;
+    public float ChanceAgressaoInicial { get; init; }
     public float ChanceAtaqueAposEmpate;
 
     // --- FUGA ---

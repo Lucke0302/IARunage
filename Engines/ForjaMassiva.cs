@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Runage.Models;
 using Runage.Utils;
 
@@ -8,7 +7,7 @@ namespace Runage.Engines;
 
 public static class ForjaMassiva
 {
-    public static void Iniciar(float viesValor)
+    public static async Task IniciarAsync(float viesValor)
     {
         Console.Clear();
         Console.WriteLine("==================================================");
@@ -24,7 +23,7 @@ public static class ForjaMassiva
         TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 10, episodios: 6000);
         
         float[][] pesosGlobais = playerGlobal.ExportarPesos();
-        DataHandler.SalvarPesosPlayer(viesValor, "pesos_Global.json", pesosGlobais);
+        await DataHandler.SalvarPesosPlayerAsync(viesValor, "pesos_Global.json", pesosGlobais);
         Console.WriteLine(">> Cérebro Global salvo com sucesso!\n");
 
         Console.WriteLine("[FASE 2] Iniciando Especialização e Mente Coletiva NPC...\n");
@@ -41,8 +40,8 @@ public static class ForjaMassiva
 
             TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000);
 
-            DataHandler.SalvarPesosPlayer(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
-            DataHandler.SalvarPesosNPC(mobAtual.Nome, viesValor, mobColmeia.ExportarPesos());
+            await DataHandler.SalvarPesosPlayerAsync(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
+            await DataHandler.SalvarPesosNPCAsync(mobAtual.Nome, viesValor, mobColmeia.ExportarPesos());
             
             Console.WriteLine($">> Conhecimento Tático e Colmeia salvos para {mobAtual.Nome}.\n");
         }
@@ -57,7 +56,7 @@ public static class ForjaMassiva
 
     private static void TreinarGlobal(QAgent player, Dictionary<int, PerfilMob> mobs, float vies, int sims, int episodios)
     {
-        var listaMobs = mobs.Values.ToList();
+        var listaMobs = new List<PerfilMob>(mobs.Values);
         Random rnd = new();
 
         int totalVitorias = 0;
@@ -150,45 +149,55 @@ public static class ForjaMassiva
         Console.ResetColor();
     }
 
-    // ExecutarEpisodio agora aceita QAgent? mobAgente (pode ser null)
+        private static readonly int[][] AcoesPorAndar;
+
+    static ForjaMassiva()
+    {
+        const int andarLimite = 100;
+        AcoesPorAndar = new int[andarLimite + 1][];
+        for (int andar = 0; andar <= andarLimite; andar++)
+        {
+            var lista = new List<int>(6) { 0, 1, 2, 3, 4, 5 };
+            if (andar >= 5) lista.Add(7);
+            if (andar >= 10) lista.Add(6);
+            AcoesPorAndar[andar] = lista.ToArray();
+        }
+    }
+
+    private static int[] ObterAcoesPorAndar(int andar)
+    {
+        int idx = Math.Clamp(andar, 0, AcoesPorAndar.Length - 1);
+        return AcoesPorAndar[idx];
+    }
+
     private static int ExecutarEpisodio(QAgent player, QAgent? mobAgente, PerfilMob perfil, float vies, float pMultiplicador, int andar)
     {
-        CombatEnvironment env = new CombatEnvironment(perfil, vies);
-        env.CombateMortal = true; 
-        
-        env.PlayerMultiplicador *= pMultiplicador;
-        env.PlayerHP            *= pMultiplicador;
-
+        var env = new CombatEnvironment(perfil, vies)
+        {
+            CombateMortal = true
+        };
         env.AplicarMultiplicadorPlayer(pMultiplicador);
 
-        List<int> acoesDesbloqueadas = new() { 0, 1, 2, 3, 4, 5 };
-        if (andar >= 5) acoesDesbloqueadas.Add(7); 
-        if (andar >= 10) acoesDesbloqueadas.Add(6);
-        int[] acoesPermitidas = acoesDesbloqueadas.ToArray();
-        
-        bool lutaAtiva = true;
-        int turnosAtuais = 0;
+        int[] acoesPermitidas = ObterAcoesPorAndar(andar);
+        const int maxTurnos = 500;
+        int turno = 0;
+        bool ativo = true;
 
-        while (lutaAtiva && turnosAtuais < 500) 
+        while (ativo && turno < maxTurnos)
         {
-            turnosAtuais++;
-            float[] estadoBase = env.GetFeatures();
+            turno++;
+            FeatureVector estado = env.GetFeatures();
 
-            int acaoPlayer = player.EscolherAcao(estadoBase, acoesPermitidas);
-            int acaoMob;
-            if (mobAgente != null)
-                acaoMob = mobAgente.EscolherAcaoMob(estadoBase); // usa máscara fixa
-            else
-                acaoMob = 0; // dummy, não usado no global
+            int acaoPlayer = player.EscolherAcao(estado, acoesPermitidas);
+            int acaoMob = mobAgente?.EscolherAcaoMob(estado) ?? 0;
 
-            float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
-            float[] novoEstado = env.GetFeatures();
-            
-            player.Aprender(estadoBase, acaoPlayer, recompensas[0], novoEstado, acoesPermitidas);
-            if (mobAgente != null)
-                mobAgente.Aprender(estadoBase, acaoMob, recompensas[1], novoEstado);
-            
-            if (env.IsGameOver) lutaAtiva = false;
+            Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
+            FeatureVector novoEstado = env.GetFeatures();
+
+            player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado, acoesPermitidas);
+            mobAgente?.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
+
+            if (env.IsGameOver) ativo = false;
         }
 
         if (env.PlayerHP <= 0) return -1;

@@ -12,49 +12,53 @@ public class CombatEnvironment
     public float AuraPlayer = 0f; 
     public bool IsGameOver = false;
 
+    // --- Novas propriedades para rastreamento de morte ---
+    public string CausaMortePlayer { get; private set; } = "Nenhuma";
+    public float DanoSofridoPlayer { get; private set; } = 0f;
+    public bool PlayerMorreuPorAutoDano { get; private set; } = false;
+
     private int turnosPacificos = 0;
     private int turnosPacificosTotal = 0;
-    private bool alguemAtacou = false;
+    private bool alguemAtacou = false; 
     private int playerCooldownRuna = 0; 
     private int playerBuffFogo = 0;     
     private int mobStunturnos = 0;
-    private int playerDeathCount;
     private PerfilMob perfilMob;
     private float playerVies;
     private float mobHpInicial;
+    private float playerMaxHP; 
+    private float mobMaxHP;  
     private Random rnd = new();
 
-    // Controla o ciclo oportunista: quando true o mob prefere recuar neste turno
-    // para enganar o player, em vez de atacar. Alterna a cada ataque bem-sucedido.
     private bool oportunistaFaseRecuo = false;
     private int oportunistaTurnosRecuo = 0;
-
-    // Dano pesado máximo do mob, normalizado para a feature de perigo
     private float mobDanoPesadoNormalizado;
 
-    public CombatEnvironment(int deathCount, PerfilMob perfil, float vies)
+    public CombatEnvironment(PerfilMob perfil, float vies)
     {
-        playerDeathCount = deathCount;
         perfilMob = perfil;
         playerVies = vies; 
         
         MobHP = perfil.HpBase;
         mobHpInicial = perfil.HpBase;
+        mobMaxHP = perfil.HpBase;
 
-        // Dano potencial do mob: DanoPesado * multiplicador do arquétipo, normalizado
-        // por um teto de referência (150f) pra caber em [0,1]. Mob muito perigoso → ~1.0,
-        // Cervo escalado → valor alto que o agente agora consegue "ver".
         float danoPesadoReal = perfil.DanoPesado * perfil.Arquetipo.MultiplicadorDano;
         mobDanoPesadoNormalizado = Math.Clamp(danoPesadoReal / 150f, 0f, 1f);
 
-        // Escalonamento por vies (ponto neutro = vies 0.5 = stats base):
-        // HP:   vies 0.0 → +50% extra | vies 0.5~1.0 → base (1.0x)
-        // Dano: vies 0.5~0.0 → base  | vies 1.0 → +50% extra
-        float fatorHP   = (vies < 0.5f) ? (1.5f - vies) : 1.0f;   // 0.0→1.5 | 0.5→1.0 | 1.0→1.0
-        float fatorDano = (vies > 0.5f) ? (0.5f + vies) : 1.0f;   // 0.0→1.0 | 0.5→1.0 | 1.0→1.5
+        float fatorHP   = (vies < 0.5f) ? (1.5f - vies) : 1.0f;
+        float fatorDano = (vies > 0.5f) ? (0.5f + vies) : 1.0f;
 
-        PlayerHP            = 100f * fatorHP;
+        playerMaxHP = 100f * fatorHP;
+        PlayerHP = playerMaxHP;
         PlayerMultiplicador = fatorDano;
+    }
+
+    public void AplicarMultiplicadorPlayer(float multiplicador)
+    {
+        PlayerMultiplicador *= multiplicador;
+        playerMaxHP *= multiplicador;
+        PlayerHP = Math.Min(playerMaxHP, PlayerHP * multiplicador);
     }
 
     private float CalcularDanoOrganico(float baseDamage)
@@ -64,23 +68,31 @@ public class CombatEnvironment
         return baseDamage * variacao * (critico ? 2.0f : 1.0f);
     }
 
-    public float[] GetFeatures() => [ 
-        1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f),                            // [0] proximidade
-        Math.Clamp(PlayerHP / (100f * Math.Max(1f, PlayerMultiplicador)), 0f, 1f), // [1] HP do player (%)
-        Math.Clamp(MobHP / Math.Max(1f, mobHpInicial), 0f, 1f),                    // [2] HP do mob (%)
-        (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f,                       // [3] aura moral
-        Math.Clamp(turnosPacificos / 6.0f, 0f, 1f),                                // [4] turnos pacifico
-        (playerCooldownRuna == 0) ? 1.0f : 0.0f,                                   // [5] runa disponivel
-        (mobStunturnos > 0) ? 1.0f : 0.0f,                                         // [6] mob atordoado
-        mobDanoPesadoNormalizado                                                    // [7] perigo do mob
-    ];
+    public float[] GetFeatures()
+    {
+        float hpPlayerNormalizado = Math.Clamp(PlayerHP / playerMaxHP, 0f, 1f);
+        float hpMobNormalizado = Math.Clamp(MobHP / mobMaxHP, 0f, 1f);
+        return new float[] {
+            1.0f - (Math.Clamp(Distancia, 0f, 3f) / 3.0f),                            
+            hpPlayerNormalizado,
+            hpMobNormalizado,
+            (Math.Clamp(AuraPlayer, -100f, 100f) + 100f) / 200f,
+            Math.Clamp(turnosPacificos / 6.0f, 0f, 1f),
+            (playerCooldownRuna == 0) ? 1.0f : 0.0f,
+            (mobStunturnos > 0) ? 1.0f : 0.0f,
+            mobDanoPesadoNormalizado
+        };
+    }
 
     public float[] ResolverTick(int acaoPlayer, int acaoMob)
     {
-        float[] recompensas = { 0f, 0f }; 
+        alguemAtacou = false;
+        bool ataqueOcorreuNoTurno = false;
 
+        float[] recompensas = { 0f, 0f }; 
         float mobHpAnterior = MobHP;
         bool ultimoDanoFoiAutoDano = false;
+        float danoM = 0f; // será preenchido se o mob atacar
         
         if (playerCooldownRuna > 0) playerCooldownRuna--;
         if (playerBuffFogo > 0) playerBuffFogo--;
@@ -94,7 +106,6 @@ public class CombatEnvironment
         bool playerUsouParry = (acaoPlayer == 7);
         var arq = perfilMob.Arquetipo;
 
-        // Stun: se o mob foi atordoado no turno anterior, ele perde a ação deste turno
         if (mobStunturnos > 0)
         {
             mobStunturnos--;
@@ -102,10 +113,7 @@ public class CombatEnvironment
             mobTentouAtacar = false;
         }
 
-        // --- PARRY ---
-        // Bloqueio perfeito: se o mob estava de fato atacando, anula o dano e o atordoa
-        // por 1 turno. Se o mob não atacou, o parry "erra" e o player fica vulnerável
-        // (pequena punição), pra não ser estritamente dominante sobre Defesa normal.
+        // PARRY
         if (playerUsouParry && Distancia == 0)
         {
             if (mobTentouAtacar)
@@ -113,7 +121,8 @@ public class CombatEnvironment
                 recompensas[0] += 60f;
                 recompensas[1] -= 30f;
                 mobStunturnos = 1;
-                mobTentouAtacar = false; // anula o ataque deste turno também
+                mobTentouAtacar = false;
+                ataqueOcorreuNoTurno = true;
             }
             else
             {
@@ -121,7 +130,7 @@ public class CombatEnvironment
             }
         }
 
-        // --- INSTINTO FORÇADO DO MOB ---
+        // INSTINTO FORÇADO
         float fatorProximidade = arq.CicloOportunista ? 1.0f : (1.0f - (Distancia / 3.0f));
         float chanceRealDeAtaque = arq.ChanceAgressaoInicial * fatorProximidade;
 
@@ -131,6 +140,7 @@ public class CombatEnvironment
             {
                 acaoMob = rnd.NextDouble() < 0.7 ? 0 : 1; 
                 mobTentouAtacar = true;
+                ataqueOcorreuNoTurno = true;
             }
         }
         else if (!alguemAtacou && mobTentouAtacar)
@@ -139,63 +149,52 @@ public class CombatEnvironment
                 acaoMob = 3; 
             else
                 acaoMob = rnd.NextDouble() < 0.5 ? 3 : 4; 
-                
             mobTentouAtacar = false;
         }
 
-        // --- CICLO OPORTUNISTA ---
-        // Arquetipos com CicloOportunista=true (Bandido) alternam fases de ataque e
-        // recuo falso para desestabilizar o player. Na fase de recuo o mob finge
-        // se afastar por 1-2 turnos e depois ataca sem aviso — mesmo que o player
-        // já tenha se aproximado. Isso força o player a aprender a não relaxar a
-        // guarda quando o Bandido recua.
-        if (arq.CicloOportunista && alguemAtacou)
+        // CICLO OPORTUNISTA
+        if (arq.CicloOportunista && ataqueOcorreuNoTurno)
         {
             if (oportunistaFaseRecuo)
             {
                 oportunistaTurnosRecuo++;
-                // Recua por 1-2 turnos e então lança um ataque surpresa
                 if (oportunistaTurnosRecuo >= rnd.Next(1, 3))
                 {
                     oportunistaFaseRecuo = false;
                     oportunistaTurnosRecuo = 0;
-                    // Ataque surpresa: ignora distância (o Bandido é rápido)
                     acaoMob = rnd.NextDouble() < 0.6 ? 0 : 1;
                     mobTentouAtacar = true;
                 }
                 else
                 {
-                    acaoMob = 3; // recua
+                    acaoMob = 3;
                     mobTentouAtacar = false;
                 }
             }
             else if (mobTentouAtacar && rnd.NextDouble() < 0.45f)
             {
-                // Após atacar, 45% de chance de entrar na fase de recuo falso
                 oportunistaFaseRecuo = true;
                 oportunistaTurnosRecuo = 0;
             }
         }
 
-        if (playerUsouRuna && playerCooldownRuna > 0)
-        {
-            recompensas[0] -= 20f; 
-            playerUsouRuna = false;
-            playerAgressivo = false;
-        }
-
+        // SOBRECARGA
         if (playerUsouSobrecarga)
         {
             float poderAntiTanque = 50f + (MobHP * 0.10f); 
             float danoSobrecarga = CalcularDanoOrganico(poderAntiTanque) * PlayerMultiplicador;
-            
             float custoHp = 10f * PlayerMultiplicador;
             PlayerHP -= custoHp; 
             ultimoDanoFoiAutoDano = true;
             
+            // Penalidade extra se o mob já estiver com HP baixo (anti-overkill)
+            if (MobHP < mobHpInicial * 0.3f)
+            {
+                recompensas[0] -= 100f * playerVies;
+            }
+
             if (acaoMob == 3)
             { 
-                // Mob esquivou: só o custo conta, sem dano nem overkill
                 recompensas[0] -= (custoHp * 2.5f);
                 recompensas[0] -= 10f; 
                 recompensas[1] += 40f; 
@@ -204,36 +203,25 @@ public class CombatEnvironment
             { 
                 float hpMobAntesSobrecarga = MobHP;
                 MobHP -= danoSobrecarga; 
-
-                // Dano efetivo é limitado ao HP que o mob de fato tinha (overkill não conta).
-                // Recompensa = dano efetivo - overkill - custo próprio em HP.
-                // Contra mobs com pouco HP (Cervo), o overkill cancela o ganho e o
-                // custo próprio domina, deixando a Sobrecarga claramente não-lucrativa.
                 float danoEfetivo = Math.Min(danoSobrecarga, hpMobAntesSobrecarga);
                 float overkill = Math.Max(0f, danoSobrecarga - hpMobAntesSobrecarga);
-
                 recompensas[0] += (danoEfetivo - overkill - custoHp) * playerVies; 
                 recompensas[1] -= 80f; 
-
-                // Punicao adicional por desperdicio: Sobrecarga e anti-tanque.
-                // Mobs com HP maximo baixo (Cervo ~15, Aldeao ~30) geram punicao
-                // severa. Referencia de 200f = HP minimo de um tanque real.
-                // Independente do overkill: usar Sobrecarga em mob fraco e sempre ruim.
                 float fraquezaMob = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
                 recompensas[0] -= 300f * fraquezaMob;
             }
         }
 
-        // --- SISTEMA MORAL DO PLAYER ---
+        // SISTEMA MORAL
         if (!alguemAtacou)
         {
             if (playerAgressivo)
             {
                 AuraPlayer -= 50f; 
-                
                 float recompensaAgressao = -1500f * (1.0f - playerVies);
                 recompensas[0] += recompensaAgressao;
                 alguemAtacou = true;
+                ataqueOcorreuNoTurno = true;
 
                 if (mobTentouAtacar && rnd.NextDouble() < arq.ChanceFugaSeProvocado)
                 {
@@ -245,27 +233,19 @@ public class CombatEnvironment
             {
                 AuraPlayer += 15f; 
                 alguemAtacou = true;
-                
-                // Punição severa para primeiro ataque injustificado.
-                // Arquetipos defensivos (ChanceAgressaoInicial ≈ 0) levam -2500f,
-                // enquanto agressivos (ChanceAgressaoInicial ≈ 1) levam -250f
+                ataqueOcorreuNoTurno = true;
                 float punicaoMob = -2500f * (1.0f - arq.ChanceAgressaoInicial);
                 recompensas[1] += punicaoMob;
             }
         }
 
-        // --- AVALIAÇÃO DE PAZ E PASSIVIDADE ---
+        // PAZ
         bool playerPacifico = (acaoPlayer == 2 || acaoPlayer == 3 || acaoPlayer == 4 || acaoPlayer == 7);
         bool mobPacifico = (acaoMob == 2 || acaoMob == 3 || acaoMob == 4);
 
         if (perfilMob.ResisteHitKill && mobHpAnterior >= mobHpInicial && MobHP <= 0)
-        {
             MobHP = 1f;
-        }
 
-        // Morte é sempre checada primeiro: se alguém já morreu (dano de Sobrecarga/Runa
-        // resolvido antes deste bloco), o combate termina aqui e a recompensa de abate
-        // é processada no final da função, nunca pelos returns de empate abaixo.
         if (PlayerHP <= 0 || MobHP <= 0) IsGameOver = true;
 
         if (!IsGameOver && playerPacifico && mobPacifico)
@@ -275,7 +255,6 @@ public class CombatEnvironment
 
             float recompensaPacifica = Math.Max(0f, 20f - (turnosPacificosTotal * 1.5f));
             float fatorPaz = Math.Clamp(1.0f - playerVies, 0f, 1f);
-            
             recompensas[0] += recompensaPacifica * fatorPaz + (-10f) * (1f - fatorPaz); 
             recompensas[1] += recompensaPacifica; 
 
@@ -284,10 +263,6 @@ public class CombatEnvironment
             if (CombateMortal && MobHP < (mobHpInicial * arq.LimiarHpFuga) && Distancia >= 3 && acaoMob == 3)
             {
                 IsGameOver = true;
-                // Recompensa por deixar o mob fugir ferido, sem matar de fato:
-                // inversamente proporcional ao viés. Pacífico (vies baixo) valoriza
-                // evitar o combate final e recebe quase o loot completo; Caótico
-                // (vies alto) não se contenta com isso e recebe bem menos.
                 float fatorFugaParcial = Math.Clamp(1.0f - playerVies, 0f, 1f);
                 recompensas[0] += perfilMob.RecompensaAbate * 0.8f * fatorFugaParcial; 
                 return recompensas;
@@ -306,8 +281,6 @@ public class CombatEnvironment
                     bonusEmpateFinal = bonusBase + (-200f - bonusBase) * t;
                 }
                 recompensas[0] += bonusEmpateFinal;
-                
-                // Mobs agressivos ganham menos ao empatar
                 recompensas[1] += 120f * (1.0f - arq.ChanceAgressaoInicial);
                 return recompensas;
             }
@@ -317,15 +290,9 @@ public class CombatEnvironment
             turnosPacificos = 0; 
         }
 
-        // Punição por covardia para mobs hiper agressivos
         if (mobPacifico && arq.ChanceAgressaoInicial >= 0.6f)
             recompensas[1] -= 30f;
 
-
-        // Punicao continua para mobs defensivos que atacam sem o player ter sido agressivo
-        // neste turno. Quanto mais defensivo o arquetipo (ChanceAgressaoInicial baixo),
-        // maior a punicao - o Guarda Veterano (HumanoForte, 0f) recebe o maximo.
-        // Vale a cada turno que o mob defensivo ataca sem ser provocado.
         if (mobTentouAtacar && !playerAgressivo && arq.ChanceAgressaoInicial < 0.3f)
         {
             float grauDefensivo = 1.0f - (arq.ChanceAgressaoInicial / 0.3f);
@@ -334,12 +301,6 @@ public class CombatEnvironment
         if (acaoPlayer == 4 && !mobPacifico)
             recompensas[0] -= turnosPacificosTotal * 0.8f;
 
-        // Penalidade por impasse inerte: se o player ficou passivo E o mob ainda
-        // está com HP alto, o combate não está progredindo. Cresce com o HP restante
-        // do mob (máximo quando HP cheio, zero quando quase morto) e é inversamente
-        // proporcional ao viés pacífico — o 0.8 sente mais pressão pra resolver logo,
-        // o 0.0 tem mais tolerância pra esperar uma saída não-violenta.
-        // Não dispara se o combate já terminou (morte, fuga, empate pacífico).
         if (!IsGameOver && playerPacifico && MobHP >= mobHpInicial * 0.5f)
         {
             float pressaoInacao = 8f * (MobHP / mobHpInicial) * playerVies;
@@ -352,9 +313,12 @@ public class CombatEnvironment
             mobTentouAtacar = true;
         }
 
-        // --- MOVIMENTAÇÃO ---
-        if (acaoPlayer == 3 || acaoPlayer == 4) Distancia = Math.Max(0, Distancia - 1f); 
-        if (acaoMob == 3 || acaoMob == 4) Distancia = Math.Max(0, Distancia - 1f);       
+        // MOVIMENTAÇÃO
+        if (acaoPlayer == 3) Distancia = Math.Max(0, Distancia - 1f);
+        else if (acaoPlayer == 4) Distancia = Math.Min(3f, Distancia + 1f);
+
+        if (acaoMob == 3) Distancia = Math.Max(0, Distancia - 1f);
+        else if (acaoMob == 4) Distancia = Math.Min(3f, Distancia + 1f);
 
         if (arq.FechaDistanciaAoAtacar && mobTentouAtacar && Distancia == 1)
             Distancia = 0; 
@@ -366,32 +330,25 @@ public class CombatEnvironment
             Distancia = Math.Min(3f, Distancia + 1f);
         }
 
-        // --- RESOLUÇÃO DE DANO E HABILIDADES ---
+        // RUNA
         if (playerUsouRuna)
         {
             playerCooldownRuna = 5;
             playerBuffFogo = 3;
             float danoRuna = CalcularDanoOrganico(20f) * PlayerMultiplicador;
-            
             if (acaoMob == 3) { recompensas[0] -= 10f; recompensas[1] += 40f; } 
             else { 
                 float hpMobAntesRuna = MobHP;
                 MobHP -= danoRuna;
-
-                // Penalização por overkill: Runa é anti-tanque leve — desperdiçá-la
-                // num mob de HP baixo (Cervo ~15, Aldeão ~30) é ineficiente e deve
-                // ser desestimulado. Quanto maior o overkill relativo ao HP inicial
-                // do mob, maior a punição — mas bem mais suave que a Sobrecarga
-                // (teto de 80f vs 300f), pois a Runa ainda buffa fogo por 3 turnos.
                 float overkillRuna = Math.Max(0f, danoRuna - hpMobAntesRuna);
                 float fraquezaMobRuna = Math.Clamp(1.0f - (mobHpInicial / 200f), 0f, 1f);
                 recompensas[0] -= 80f * fraquezaMobRuna * Math.Clamp(overkillRuna / Math.Max(1f, hpMobAntesRuna), 0f, 1f);
-
                 recompensas[0] += 55f * playerVies; 
                 recompensas[1] -= 60f; 
             }
         }
 
+        // RESOLUÇÃO DE DANO
         if (Distancia > 0)
         {
             if (playerAtacouBase) recompensas[0] -= 5f; 
@@ -412,20 +369,15 @@ public class CombatEnvironment
                 {
                     if (acaoPlayer == 1)
                     {
-                        // Ataque Pesado quebra a defesa: causa dano normalmente,
-                        // mas o mob é punido por ter defendido mal e o player
-                        // recebe bônus por ter perfurado.
                         MobHP -= danoP;
                         recompensas[0] += (danoP * 2f) * playerVies;
-                        recompensas[0] += 20f;        // bônus de perfuração
-                        recompensas[1] -= 60f;        // punição por defesa quebrada
+                        recompensas[0] += 20f;
+                        recompensas[1] -= 60f;
                     }
                     else
                     {
-                        // Ataque Leve bloqueado: defesa segura, sem dano.
                         recompensas[0] -= 10f;
                         recompensas[1] += 10f;
-
                         if (rnd.NextDouble() < arq.ChanceContraAtaque)
                         {
                             float danoContra = CalcularDanoOrganico(danoP * arq.MultiplicadorContraAtaque);
@@ -446,7 +398,7 @@ public class CombatEnvironment
             {
                 float baseDano = (acaoMob == 0 || acaoMob == 5) ? perfilMob.DanoLeve : perfilMob.DanoPesado;
                 baseDano *= arq.MultiplicadorDano;
-                float danoM = CalcularDanoOrganico(baseDano);
+                danoM = CalcularDanoOrganico(baseDano);
 
                 if (acaoPlayer == 3) { recompensas[1] -= 10f; recompensas[0] += 20f; } 
                 else if (acaoPlayer == 2) { recompensas[1] -= 10f; recompensas[0] += 10f; } 
@@ -456,50 +408,50 @@ public class CombatEnvironment
                     ultimoDanoFoiAutoDano = false;
                     float multiplicadorSadismo = 1.0f + arq.ChanceAgressaoInicial; 
                     recompensas[1] += (danoM * 2f) * multiplicadorSadismo; 
-                    
-                    // O agente perde pontos proporcionais ao estrago que sofreu.
                     recompensas[0] -= (danoM * 2.5f); 
                 }
             }
         }
 
         if (perfilMob.ResisteHitKill && mobHpAnterior >= mobHpInicial && MobHP <= 0)
-        {
             MobHP = 1f;
-        }
 
         if (PlayerHP <= 0 || MobHP <= 0) IsGameOver = true;
 
         if (PlayerHP <= 0) 
         { 
             float pesoMorte = 500f + (500f * playerVies);
-
-            // Morte "kamikaze": se o golpe final que zerou o HP foi auto-dano da
-            // Sobrecarga (e não dano do mob), a punição é multiplicada — o agente
-            // se matou com a própria habilidade, o que é muito pior que morrer em combate.
-            if (ultimoDanoFoiAutoDano) pesoMorte *= 3.0f;
-
+            if (ultimoDanoFoiAutoDano) 
+            {
+                pesoMorte *= 3.0f;
+                CausaMortePlayer = "Auto-dano (Sobrecarga)";
+                PlayerMorreuPorAutoDano = true;
+                DanoSofridoPlayer = 10f * PlayerMultiplicador; // custo da Sobrecarga
+            }
+            else
+            {
+                CausaMortePlayer = "Dano do mob";
+                PlayerMorreuPorAutoDano = false;
+                DanoSofridoPlayer = danoM;
+            }
             recompensas[0] -= pesoMorte; 
             recompensas[1] += 200f; 
         }
 
         float danoCausadoNesteTurno = mobHpAnterior - MobHP;
-        
         if (danoCausadoNesteTurno > 0 && playerVies > 0.1f) 
         {
             float percentualRoubo = 0.15f * playerVies;
             float curaVampirica = danoCausadoNesteTurno * percentualRoubo;
-            
-            PlayerHP = Math.Min(100f * PlayerMultiplicador, PlayerHP + curaVampirica);
+            PlayerHP = Math.Min(playerMaxHP, PlayerHP + curaVampirica);
         }
 
         if (MobHP <= 0) 
         {
             recompensas[1] -= 150f; 
             recompensas[0] += (perfilMob.RecompensaAbate * playerVies); 
-            
             float curaAbate = 20f * playerVies * PlayerMultiplicador;
-            PlayerHP = Math.Min(100f * PlayerMultiplicador, PlayerHP + curaAbate); 
+            PlayerHP = Math.Min(playerMaxHP, PlayerHP + curaAbate); 
         }
 
         return recompensas;

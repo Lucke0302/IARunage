@@ -14,6 +14,10 @@ public class QAgent
     private float temperatura;
     private Random rnd = new();
 
+    // Máscara fixa para mobs (ações 0-4 apenas)
+    private static readonly int[] AcoesMob = { 0, 1, 2, 3, 4 };
+    private static readonly int[] TodasAsAcoes = { 0, 1, 2, 3, 4, 5, 6, 7 };
+
     public QAgent(float temp, float[]? instintosBase = null)
     {
         temperatura = temp;
@@ -31,19 +35,16 @@ public class QAgent
         taxaExploracao = Math.Max(pisoExploracao, taxaExploracao - 0.05f); 
     }
 
-    // Usado pelo gerador procedural para travar o agente no modo combate experiente
     public void DefinirExploracao(float nivel)
     {
         taxaExploracao = nivel;
     }
 
-    private static readonly int[] TodasAsAcoes = { 0, 1, 2, 3, 4, 5, 6, 7 };
-
+    // Método para escolha de ação com máscara opcional
     public int EscolherAcao(float[] features, int[]? acoesPermitidas = null)
     {
         int[] acoes = acoesPermitidas ?? TodasAsAcoes;
 
-        // Limita a exploração aleatória apenas às ações desbloqueadas
         if (rnd.NextDouble() < taxaExploracao) return acoes[rnd.Next(acoes.Length)];
 
         float[] qs = new float[acoes.Length];
@@ -74,6 +75,12 @@ public class QAgent
         }
 
         return ObterMelhorAcao(features, acoes);
+    }
+
+    // Sobrecarga para escolha de ação com máscara fixa para mob
+    public int EscolherAcaoMob(float[] features)
+    {
+        return EscolherAcao(features, AcoesMob);
     }
 
     private int ObterMelhorAcao(float[] features, int[]? acoesPermitidas = null)

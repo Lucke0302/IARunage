@@ -117,27 +117,21 @@ public static class ModoSobrevivencia
     private static (bool sobreviveu, string detalhe) ExecutarCombate(float viesValor, float[][] pesosGlobais, PerfilMob inimigo, float pMultiplicador, int[] acoesPermitidas)
     {
         QAgent player = new QAgent(15.0f, null);
-        
         player.ImportarPesos(pesosGlobais);
 
         float[][]? pesosEspecificos = DataHandler.CarregarPesosPlayer(viesValor, $"pesos_{inimigo.Nome.Replace(" ", "_")}.json");
         if (pesosEspecificos != null) player.ImportarPesos(pesosEspecificos);
 
-        player.DefinirExploracao(0.05f); 
+        player.DefinirExploracao(0.05f);
 
         QAgent mob = new QAgent(inimigo.Temperatura, inimigo.InstintosBase);
         float[][]? pesosColmeia = DataHandler.CarregarPesosNPC(inimigo.Nome, viesValor);
-        
         if (pesosColmeia != null) mob.ImportarPesos(pesosColmeia);
         mob.DefinirExploracao(0.05f);
 
-        CombatEnvironment env = new CombatEnvironment(0, inimigo, viesValor);
-        
+        CombatEnvironment env = new CombatEnvironment(inimigo, viesValor);
         env.CombateMortal = true;
-        // O construtor ja calculou HP e Multiplicador com base no vies.
-        // pMultiplicador reflete o crescimento acumulado do player nos andares.
-        env.PlayerMultiplicador *= pMultiplicador;
-        env.PlayerHP            *= pMultiplicador;
+        env.AplicarMultiplicadorPlayer(pMultiplicador);
         
         bool lutaAtiva = true;
         int turnosAtuais = 0;
@@ -147,18 +141,21 @@ public static class ModoSobrevivencia
             turnosAtuais++;
             float[] estadoBase = env.GetFeatures();
 
-            // Máscara ativada: Player só enxerga as ações que destravou
             int acaoPlayer = player.EscolherAcao(estadoBase, acoesPermitidas);
-            int acaoMob = mob.EscolherAcao(estadoBase);
+            int acaoMob = mob.EscolherAcaoMob(estadoBase);
 
             float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
 
             if (env.IsGameOver) lutaAtiva = false;
         }
 
-        // NOVO: Avaliando como o combate terminou
         if (env.PlayerHP <= 0) 
-            return (false, "Morto");
+        {
+            string causa = env.CausaMortePlayer;
+            float dano = env.DanoSofridoPlayer;
+            string detalheMorte = $"Morto por {causa} (dano: {dano:F1})";
+            return (false, detalheMorte);
+        }
         
         if (env.MobHP <= 0) 
             return (true, "Inimigo Abatido ⚔️");

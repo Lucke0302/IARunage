@@ -17,13 +17,12 @@ public static class ForjaMassiva
 
         var dicionarioMobs = ObterTodosOsMobs();
         float tempPlayer = 15.0f;
-        float[] instintosPlayer = CalcularInstintos(viesValor);
+        float[] instintosPlayer = InstinctHelper.CalcularInstintos(viesValor);
 
         Console.WriteLine("[FASE 1] Forjando o Cérebro Global (Sobrevivência Básica)...");
         QAgent playerGlobal = new QAgent(tempPlayer, instintosPlayer);
         TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 10, episodios: 6000);
         
-        // Salva a baseline do Player
         float[][] pesosGlobais = playerGlobal.ExportarPesos();
         DataHandler.SalvarPesosPlayer(viesValor, "pesos_Global.json", pesosGlobais);
         Console.WriteLine(">> Cérebro Global salvo com sucesso!\n");
@@ -34,17 +33,14 @@ public static class ForjaMassiva
             PerfilMob mobAtual = kvp.Value;
             Console.WriteLine($"Especializando contra: {mobAtual.Nome}...");
 
-            //  O Player carrega a experiência Global que acabou de aprender
             QAgent playerEspecializado = new QAgent(tempPlayer, instintosPlayer);
             playerEspecializado.ImportarPesos(pesosGlobais);
             playerEspecializado.DefinirExploracao(0.6f); 
 
-            // O Mob nasce do zero para aprender a focar ESSE viés de Player específico
             QAgent mobColmeia = new QAgent(mobAtual.Temperatura, mobAtual.InstintosBase);
 
             TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000);
 
-            // Salva os cérebros finais
             DataHandler.SalvarPesosPlayer(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
             DataHandler.SalvarPesosNPC(mobAtual.Nome, viesValor, mobColmeia.ExportarPesos());
             
@@ -78,20 +74,11 @@ public static class ForjaMassiva
             for (int ep = 1; ep <= episodios; ep++)
             {
                 PerfilMob mobSorteado = listaMobs[rnd.Next(listaMobs.Count)];
-                QAgent mobDummy = new QAgent(mobSorteado.Temperatura, mobSorteado.InstintosBase);
                 
                 int andarSorteado = rnd.Next(andarMin, andarMax + 1);
-                
-                // Progressão do Player alinhada com o jogo real:
-                // No ModoSobrevivencia o player ganha +0.04f por sala, 5 salas/andar → +0.20f/andar.
-                // Começando de 1.0f no andar 1, no andar N o multiplicador esperado é 1.0 + (N-1)*0.20.
-                // Usamos (andar-1) para não superestimar o poder do player durante o treino global.
                 float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
-                
-                // Progressão do Inimigo
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
 
-                // Clona o mob com status bufados simulando os andares profundos
                 PerfilMob mobTreino = new PerfilMob(
                     mobSorteado.Nome, mobSorteado.Arquetipo, mobSorteado.Temperatura, 
                     mobSorteado.InstintosBase, mobSorteado.RecompensaAbate, 
@@ -101,7 +88,7 @@ public static class ForjaMassiva
                     mobSorteado.ResisteHitKill
                 );
 
-                int resultado = ExecutarEpisodio(player, mobDummy, mobTreino, vies, pMultiplicador, andarSorteado);
+                int resultado = ExecutarEpisodio(player, null, mobTreino, vies, pMultiplicador, andarSorteado);
                 
                 if (resultado == 1) totalVitorias++;
                 else if (resultado == -1) totalDerrotas++;
@@ -134,14 +121,9 @@ public static class ForjaMassiva
             for (int ep = 1; ep <= episodios; ep++)
             {
                 int andarSorteado = rnd.Next(andarMin, andarMax + 1);
-                
-                // Progressão do Player alinhada com o jogo real (mesmo cálculo do TreinarGlobal).
                 float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
-                
-                // Progressão do Inimigo
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
 
-                // Clona o mob com status bufados simulando os andares profundos
                 PerfilMob mobTreino = new PerfilMob(
                     perfil.Nome, perfil.Arquetipo, perfil.Temperatura, 
                     perfil.InstintosBase, perfil.RecompensaAbate, 
@@ -168,14 +150,16 @@ public static class ForjaMassiva
         Console.ResetColor();
     }
 
-    // Adicionado o parâmetro 'int andar'
-    private static int ExecutarEpisodio(QAgent player, QAgent mob, PerfilMob perfil, float vies, float pMultiplicador, int andar)
+    // ExecutarEpisodio agora aceita QAgent? mobAgente (pode ser null)
+    private static int ExecutarEpisodio(QAgent player, QAgent? mobAgente, PerfilMob perfil, float vies, float pMultiplicador, int andar)
     {
-        CombatEnvironment env = new CombatEnvironment(0, perfil, vies);
+        CombatEnvironment env = new CombatEnvironment(perfil, vies);
         env.CombateMortal = true; 
         
         env.PlayerMultiplicador *= pMultiplicador;
         env.PlayerHP            *= pMultiplicador;
+
+        env.AplicarMultiplicadorPlayer(pMultiplicador);
 
         List<int> acoesDesbloqueadas = new() { 0, 1, 2, 3, 4, 5 };
         if (andar >= 5) acoesDesbloqueadas.Add(7); 
@@ -191,13 +175,18 @@ public static class ForjaMassiva
             float[] estadoBase = env.GetFeatures();
 
             int acaoPlayer = player.EscolherAcao(estadoBase, acoesPermitidas);
-            int acaoMob = mob.EscolherAcao(estadoBase);
+            int acaoMob;
+            if (mobAgente != null)
+                acaoMob = mobAgente.EscolherAcaoMob(estadoBase); // usa máscara fixa
+            else
+                acaoMob = 0; // dummy, não usado no global
 
             float[] recompensas = env.ResolverTick(acaoPlayer, acaoMob);
             float[] novoEstado = env.GetFeatures();
             
             player.Aprender(estadoBase, acaoPlayer, recompensas[0], novoEstado, acoesPermitidas);
-            mob.Aprender(estadoBase, acaoMob, recompensas[1], novoEstado);
+            if (mobAgente != null)
+                mobAgente.Aprender(estadoBase, acaoMob, recompensas[1], novoEstado);
             
             if (env.IsGameOver) lutaAtiva = false;
         }
@@ -205,29 +194,6 @@ public static class ForjaMassiva
         if (env.PlayerHP <= 0) return -1;
         if (env.MobHP <= 0) return 1;
         return 0;
-    }
-
-    private static float[] CalcularInstintos(float viesValor)
-    {
-        float[] instintosPacifico = { -200f, -300f, 150f, 200f, 400f, -200f };
-        float[] instintosNeutro   = { 0f, 0f, 0f, 0f, 0f, 0f };
-        float[] instintosCaotico  = { 300f, 400f, -50f, 0f, -300f, 500f };
-        float[] playerInstintos = new float[6];
-
-        for (int i = 0; i < 6; i++)
-        {
-            if (viesValor <= 0.5f)
-            {
-                float t = viesValor / 0.5f; 
-                playerInstintos[i] = instintosPacifico[i] + (instintosNeutro[i] - instintosPacifico[i]) * t;
-            }
-            else
-            {
-                float t = (viesValor - 0.5f) / 0.5f; 
-                playerInstintos[i] = instintosNeutro[i] + (instintosCaotico[i] - instintosNeutro[i]) * t;
-            }
-        }
-        return playerInstintos;
     }
 
     private static Dictionary<int, PerfilMob> ObterTodosOsMobs()
@@ -239,7 +205,7 @@ public static class ForjaMassiva
             { 3, new PerfilMob("Guarda Veterano", Arquetipos.HumanoForte, 20.0f, new float[] { 100f, 50f, 150f, 0f, 50f, 150f }, 500f, 800f, 12f, 30f, false) },
             { 4, new PerfilMob("Bandido Oportunista", Arquetipos.Oportunista, 60.0f, new float[] { 150f, 100f, 0f, 200f, -50f, 0f }, 250f, 60f, 10f, 25f, false) },
             { 5, new PerfilMob("Espirito Vingativo", Arquetipos.DefensorVingativo, 30.0f, new float[] { 50f, 0f, 200f, 50f, 100f, 300f }, 450f, 150f, 5f, 15f, false) },
-            { 6, new PerfilMob("Cervo de Prodigios", Arquetipos.AnimalIndefeso, 70.0f, new float[] { -200f, -200f, 0f, 400f, 200f, -100f }, 150f, 15f, 1f, 3f, true) }, // <-- Sturdy ativado!
+            { 6, new PerfilMob("Cervo de Prodigios", Arquetipos.AnimalIndefeso, 70.0f, new float[] { -200f, -200f, 0f, 400f, 200f, -100f }, 150f, 15f, 1f, 3f, true) },
             { 7, new PerfilMob("Urso Territorial", Arquetipos.AnimalReativo, 30.0f, new float[] { 50f, 100f, 50f, 0f, 300f, 0f }, 250f, 120f, 20f, 50f, false) },
             { 8, new PerfilMob("Cultista Frenetico", Arquetipos.Inimigo, 60.0f, new float[] { 300f, 150f, -50f, -100f, -200f, 200f }, 300f, 90f, 12f, 30f, false) }
         };

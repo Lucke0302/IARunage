@@ -73,7 +73,7 @@ public static class ModoSobrevivencia
                 logger.Log($"Sala {sala}/5: {perfilBase.Nome} -> ");
 
                 // Puxando o novo retorno de Tupla
-                var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, perfilBase, playerMultiplicador, acoesPermitidas, multiplicadorMob);
+                var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, perfilBase, playerMultiplicador, acoesPermitidas, multiplicadorMob, logger);
                 if (!resultado.sobreviveu)
                 {
                     vidas--;
@@ -111,21 +111,43 @@ public static class ModoSobrevivencia
         PerfilMob inimigo, 
         float pMultiplicador, 
         int[] acoesPermitidas,
-        float multiplicadorMob = 1.0f)
+        float multiplicadorMob = 1.0f,
+        ILogger? logger = null)
     {
         QAgent player = new QAgent(15.0f, null);
         player.ImportarPesos(pesosGlobais);
 
-        // Carregamento assíncrono dos pesos específicos
+        // Carregamento assíncrono dos pesos específicos com fallback
         float[][]? pesosEspecificos = await DataHandler.CarregarPesosPlayerAsync(viesValor, $"pesos_{inimigo.Nome.Replace(" ", "_")}.json");
-        if (pesosEspecificos != null) player.ImportarPesos(pesosEspecificos);
+        if (pesosEspecificos == null)
+        {
+            logger?.LogError($"CORRUPÇÃO/DADOS AUSENTES: Pesos específicos para {inimigo.Nome}. Tentando fallback para Global...");
+            pesosEspecificos = await DataHandler.CarregarPesosPlayerAsync(viesValor, "pesos_Global.json");
+        }
+        if (pesosEspecificos != null)
+        {
+            if (!player.ImportarPesos(pesosEspecificos))
+                logger?.LogError($"Falha ao importar pesos (fallback) para player vs {inimigo.Nome}.");
+        }
+        else
+        {
+            logger?.LogError($"Fallback Global também falhou. Player usará instintos base contra {inimigo.Nome}.");
+        }
 
         player.DefinirExploracao(0.05f);
 
         QAgent mob = new QAgent(inimigo.Temperatura, inimigo.InstintosBase);
         // Carregamento assíncrono dos pesos da colmeia
         float[][]? pesosColmeia = await DataHandler.CarregarPesosNPCAsync(inimigo.Nome, viesValor);
-        if (pesosColmeia != null) mob.ImportarPesos(pesosColmeia);
+        if (pesosColmeia != null)
+        {
+            if (!mob.ImportarPesos(pesosColmeia))
+                logger?.LogError($"Falha ao importar pesos da colmeia para {inimigo.Nome}. Usando instintos base.");
+        }
+        else
+        {
+            logger?.LogError($"Colmeia não encontrada para {inimigo.Nome}. Mob usará instintos base.");
+        }
         mob.DefinirExploracao(0.05f);
 
         CombatEnvironment env = CombatEnvironmentPool.Get(inimigo, viesValor, multiplicadorMob);

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Runage.Models;
 
@@ -6,19 +7,14 @@ namespace Runage.Utils;
 public static class CombatEnvironmentPool
 {
     private const int Capacity = 16;
-    private static readonly object _lock = new();
-    private static readonly Stack<CombatEnvironment> _pool = new(Capacity);
+    private static readonly ConcurrentBag<CombatEnvironment> _pool = new();
 
     public static CombatEnvironment Get(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f)
     {
-        lock (_lock)
+        if (_pool.TryTake(out var env))
         {
-            if (_pool.Count > 0)
-            {
-                CombatEnvironment env = _pool.Pop();
-                env.Reset(perfil, vies, multiplicadorMob);
-                return env;
-            }
+            env.Reset(perfil, vies, multiplicadorMob);
+            return env;
         }
 
         return new CombatEnvironment(perfil, vies, multiplicadorMob);
@@ -26,10 +22,6 @@ public static class CombatEnvironmentPool
 
     public static void Return(CombatEnvironment env)
     {
-        lock (_lock)
-        {
-            if (_pool.Count < Capacity)
-                _pool.Push(env);
-        }
+        _pool.Add(env);
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Runage.Utils;
 
 namespace Runage.Models;
 
@@ -37,16 +38,23 @@ public class CombatEnvironment
     private float mobHpInicial;
     private float playerMaxHP;
     private float mobMaxHP;
-    private static readonly Random rnd = Random.Shared;
-
     private bool oportunistaFaseRecuo = false;
     private int oportunistaTurnosRecuo = 0;
     private float mobDanoPesadoNormalizado;
+    private IRandomProvider _random;
 
-    public CombatEnvironment(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f) => Reset(perfil, vies, multiplicadorMob);
+    public CombatEnvironment(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f, IRandomProvider? random = null)
+        : this(random) => Reset(perfil, vies, multiplicadorMob);
 
-    internal void Reset(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f)
+    private CombatEnvironment(IRandomProvider? random)
     {
+        _random = random ?? RandomProvider.Default;
+    }
+
+    internal void Reset(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f, IRandomProvider? random = null)
+    {
+        if (random != null) _random = random;
+
         perfilMob = perfil;
         playerVies = vies;
 
@@ -97,10 +105,10 @@ public class CombatEnvironment
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static float CalcularDanoOrganico(float baseDamage)
+    private float CalcularDanoOrganico(float baseDamage)
     {
-        float variacao = (float)(rnd.NextDouble() * 0.4 + 0.8);
-        bool critico = rnd.NextDouble() < 0.1;
+        float variacao = (float)(_random.NextDouble() * 0.4 + 0.8);
+        bool critico = _random.NextDouble() < 0.1;
         return baseDamage * variacao * (critico ? 2.0f : 1.0f);
     }
 
@@ -172,21 +180,21 @@ public class CombatEnvironment
         float fatorProximidade = arq.CicloOportunista ? 1.0f : (1.0f - (Distancia / 3.0f));
         float chanceRealDeAtaque = arq.ChanceAgressaoInicial * fatorProximidade;
 
-        if (!alguemAtacou && rnd.NextDouble() < chanceRealDeAtaque)
+        if (!alguemAtacou && _random.NextDouble() < chanceRealDeAtaque)
         {
             if (!mobTentouAtacar) 
             {
-                acaoMob = rnd.NextDouble() < 0.7 ? 0 : 1; 
+                acaoMob = _random.NextDouble() < 0.7 ? 0 : 1;
                 mobTentouAtacar = true;
                 ataqueOcorreuNoTurno = true;
             }
         }
         else if (!alguemAtacou && mobTentouAtacar)
         {
-            if (rnd.NextDouble() < arq.ChanceFugaPreventiva)
+            if (_random.NextDouble() < arq.ChanceFugaPreventiva)
                 acaoMob = 3; 
             else
-                acaoMob = rnd.NextDouble() < 0.5 ? 3 : 4; 
+                acaoMob = _random.NextDouble() < 0.5 ? 3 : 4;
             mobTentouAtacar = false;
         }
 
@@ -196,11 +204,11 @@ public class CombatEnvironment
             if (oportunistaFaseRecuo)
             {
                 oportunistaTurnosRecuo++;
-                if (oportunistaTurnosRecuo >= rnd.Next(1, 3))
+                if (oportunistaTurnosRecuo >= _random.Next(1, 3))
                 {
                     oportunistaFaseRecuo = false;
                     oportunistaTurnosRecuo = 0;
-                    acaoMob = rnd.NextDouble() < 0.6 ? 0 : 1;
+                    acaoMob = _random.NextDouble() < 0.6 ? 0 : 1;
                     mobTentouAtacar = true;
                 }
                 else
@@ -209,7 +217,7 @@ public class CombatEnvironment
                     mobTentouAtacar = false;
                 }
             }
-            else if (mobTentouAtacar && rnd.NextDouble() < 0.45f)
+            else if (mobTentouAtacar && _random.NextDouble() < 0.45f)
             {
                 oportunistaFaseRecuo = true;
                 oportunistaTurnosRecuo = 0;
@@ -261,7 +269,7 @@ public class CombatEnvironment
                 alguemAtacou = true;
                 ataqueOcorreuNoTurno = true;
 
-                if (mobTentouAtacar && rnd.NextDouble() < arq.ChanceFugaSeProvocado)
+                if (mobTentouAtacar && _random.NextDouble() < arq.ChanceFugaSeProvocado)
                 {
                     acaoMob = 3;
                     mobTentouAtacar = false;
@@ -345,7 +353,7 @@ public class CombatEnvironment
             rPlayer -= pressaoInacao;
         }
 
-        if (turnosPacificos > 0 && rnd.NextDouble() < arq.ChanceAtaqueAposEmpate)
+        if (turnosPacificos > 0 && _random.NextDouble() < arq.ChanceAtaqueAposEmpate)
         {
             acaoMob = 0; 
             mobTentouAtacar = true;
@@ -361,7 +369,7 @@ public class CombatEnvironment
         if (arq.FechaDistanciaAoAtacar && mobTentouAtacar && Distancia == 1)
             Distancia = 0; 
 
-        if (MobHP < (mobHpInicial * arq.LimiarHpFuga) && rnd.NextDouble() < arq.ChanceFugaHpBaixo)
+        if (MobHP < (mobHpInicial * arq.LimiarHpFuga) && _random.NextDouble() < arq.ChanceFugaHpBaixo)
         {
             acaoMob = 3; 
             mobTentouAtacar = false;
@@ -416,7 +424,7 @@ public class CombatEnvironment
                     {
                         rPlayer -= 10f;
                         rMob += 10f;
-                        if (rnd.NextDouble() < arq.ChanceContraAtaque)
+                if (_random.NextDouble() < arq.ChanceContraAtaque)
                         {
                             float danoContra = CalcularDanoOrganico(danoP * arq.MultiplicadorContraAtaque);
                             PlayerHP -= danoContra;

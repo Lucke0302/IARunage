@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Runage.Utils;
 
 namespace Runage.Models;
 
@@ -23,9 +24,9 @@ public sealed class QAgent
     private const float PisoExploracao = 0.08f;
 
     private float _taxaExploracao = 1.0f;
-    private readonly float _temperatura;
-
-    private static readonly Random Rnd = Random.Shared;
+    private float _temperatura;
+    private float[]? _instintosBase;
+    private readonly IRandomProvider _random;
 
     private static readonly int[] AcoesMob = { 0, 1, 2, 3, 4 };
     private static readonly int[] TodasAsAcoes = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -34,22 +35,33 @@ public sealed class QAgent
     private readonly float[] _qsBuffer = new float[NUM_ACOES];
     private readonly float[] _probBuffer = new float[NUM_ACOES];
 
-    public QAgent(float temperatura, float[]? instintosBase = null)
+    public QAgent(float temperatura, float[]? instintosBase = null, IRandomProvider? random = null)
+    {
+        _random = random ?? RandomProvider.Default;
+        Initialize(temperatura, instintosBase);
+    }
+
+    private void Initialize(float temperatura, float[]? instintosBase)
+    {
+        if (temperatura < 0.01f)
+            throw new ArgumentOutOfRangeException(
+                nameof(temperatura), temperatura,
+                "Temperatura deve ser >= 0.01f para evitar overflow numérico no softmax.");
+
+        _temperatura = temperatura;
+        _instintosBase = null;
+
+        if (instintosBase != null)
         {
-            if (temperatura < 0.01f)
-                throw new ArgumentOutOfRangeException(
-                    nameof(temperatura), temperatura,
-                    "Temperatura deve ser >= 0.01f para evitar overflow numérico no softmax.");
-
-            _temperatura = temperatura;
-
-            if (instintosBase != null)
+            int limit = Math.Min(instintosBase.Length, NUM_ACOES);
+            _instintosBase = new float[limit];
+            for (int a = 0; a < limit; a++)
             {
-                int limit = Math.Min(instintosBase.Length, NUM_ACOES);
-                for (int a = 0; a < limit; a++)
-                    _pesosFlat[a * NUM_FEATURES + 5] = instintosBase[a];
+                _instintosBase[a] = instintosBase[a];
+                _pesosFlat[a * NUM_FEATURES + 5] = instintosBase[a];
             }
         }
+    }
 
     public Span<float> PesosSpan() => new(_pesosFlat);
 
@@ -61,6 +73,47 @@ public sealed class QAgent
 
     public void DefinirExploracao(float nivel) => _taxaExploracao = nivel;
 
+    /// <summary>
+    /// Reinicia o agente para um estado "como novo", permitindo reutilização
+    /// sem alocar um novo objeto via <c>new</c>.
+    /// Zera os pesos, redefine a exploração e aplica os novos instintos.
+    /// </summary>
+    /// <param name="novaTemperatura">Novo valor de temperatura (deve ser >= 0.01f).</param>
+    /// <param name="novosInstintosBase">Instintos base para a feature index 5 (opcional).</param>
+    public void Reset(float novaTemperatura, float[]? novosInstintosBase = null)
+    {
+        if (novaTemperatura < 0.01f)
+            ThrowTemperaturaInvalida(novaTemperatura);
+
+        _temperatura = novaTemperatura;
+        _taxaExploracao = 1.0f;
+
+        // Zera TODOS os pesos flat
+        Array.Clear(_pesosFlat, 0, _pesosFlat.Length);
+
+        if (novosInstintosBase != null)
+        {
+            int limit = Math.Min(novosInstintosBase.Length, NUM_ACOES);
+            if (_instintosBase == null || _instintosBase.Length != limit)
+                _instintosBase = new float[limit];
+            for (int a = 0; a < limit; a++)
+            {
+                _instintosBase[a] = novosInstintosBase[a];
+                _pesosFlat[a * NUM_FEATURES + 5] = novosInstintosBase[a];
+            }
+        }
+        else
+        {
+            // Reaplica instintos anteriores, se existirem
+            if (_instintosBase != null)
+            {
+                int limit = _instintosBase.Length;
+                for (int a = 0; a < limit; a++)
+                    _pesosFlat[a * NUM_FEATURES + 5] = _instintosBase[a];
+            }
+        }
+    }
+
     // -------------------- HOT PATH --------------------
 
     public int EscolherAcao(in FeatureVector features, int[]? acoesPermitidas = null)
@@ -68,15 +121,15 @@ public sealed class QAgent
         int[] acoes = acoesPermitidas ?? TodasAsAcoes;
         int count = acoes.Length;
 
-        if (Rnd.NextDouble() < _taxaExploracao)
-            return acoes[Rnd.Next(count)];
+        if (_random.NextDouble() < _taxaExploracao)
+            return acoes[_random.Next(count)];
+
+        CalcularTodosOsQs(features, acoes, _qsBuffer);
 
         float maxQ = float.MinValue;
         for (int i = 0; i < count; i++)
         {
-            float q = CalcularQ(acoes[i], features);
-            _qsBuffer[i] = q;
-            if (q > maxQ) maxQ = q;
+            if (_qsBuffer[i] > maxQ) maxQ = _qsBuffer[i];
         }
 
         float somaExp = 0f;
@@ -89,7 +142,7 @@ public sealed class QAgent
             somaExp += p;
         }
 
-        double roleta = Rnd.NextDouble() * somaExp;
+        double roleta = _random.NextDouble() * somaExp;
         float acum = 0f;
         for (int i = 0; i < count; i++)
         {
@@ -115,6 +168,15 @@ public sealed class QAgent
              + _pesosFlat[baseIdx + 5] * features.F5
              + _pesosFlat[baseIdx + 6] * features.F6
              + _pesosFlat[baseIdx + 7] * features.F7;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void CalcularTodosOsQs(in FeatureVector features, int[] acoesPermitidas, Span<float> qsBuffer)
+    {
+        for (int i = 0; i < acoesPermitidas.Length; i++)
+        {
+            qsBuffer[i] = CalcularQ(acoesPermitidas[i], features);
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,12 +219,12 @@ public sealed class QAgent
         int[] acoes = acoesPermitidas ?? TodasAsAcoes;
         int count = acoes.Length;
 
-        // MaxQ futuro iterando sem alocar arrays
+        CalcularTodosOsQs(estadoNovo, acoes, _qsBuffer);
+
         float maxQFuturo = float.MinValue;
         for (int i = 0; i < count; i++)
         {
-            float q = CalcularQ(acoes[i], estadoNovo);
-            if (q > maxQFuturo) maxQFuturo = q;
+            if (_qsBuffer[i] > maxQFuturo) maxQFuturo = _qsBuffer[i];
         }
 
         if (!float.IsFinite(maxQFuturo)) return;
@@ -205,19 +267,37 @@ public sealed class QAgent
         return export;
     }
 
-    public void ImportarPesos(float[][] pesosCarregados)
+    public bool ImportarPesos(float[][] pesosCarregados)
     {
-        if (pesosCarregados == null || pesosCarregados.Length != NUM_ACOES)
-            throw new ArgumentException($"Esperado {NUM_ACOES} ações, recebido {pesosCarregados?.Length ?? 0}.");
-        if (pesosCarregados[0].Length != NUM_FEATURES)
-            throw new ArgumentException($"Esperado {NUM_FEATURES} features, recebido {pesosCarregados[0].Length}.");
+        // --- Validação de integridade ---
+        if (pesosCarregados == null || pesosCarregados.Length == 0)
+            return false;
 
-                        for (int i = 0; i < NUM_ACOES; i++)
+        if (pesosCarregados.Length != NUM_ACOES)
+            return false;
+
+        for (int i = 0; i < pesosCarregados.Length; i++)
+        {
+            if (pesosCarregados[i] == null || pesosCarregados[i].Length != NUM_FEATURES)
+                return false;
+
+            for (int j = 0; j < pesosCarregados[i].Length; j++)
+            {
+                float v = pesosCarregados[i][j];
+                if (float.IsNaN(v) || float.IsInfinity(v))
+                    return false;
+            }
+        }
+
+        // --- Importação ---
+        for (int i = 0; i < NUM_ACOES; i++)
         {
             int baseIdx = i * NUM_FEATURES;
             for (int j = 0; j < NUM_FEATURES; j++)
                 _pesosFlat[baseIdx + j] = pesosCarregados[i][j];
         }
+
+        return true;
     }
 
     // -------------------- Sanitização & Guardas --------------------
@@ -244,4 +324,9 @@ public sealed class QAgent
     private static void ThrowRecompensaInvalida(float recompensa) =>
         throw new ArgumentOutOfRangeException(nameof(recompensa), recompensa,
             "Recompensa não pode ser NaN ou Infinity.");
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowTemperaturaInvalida(float temperatura) =>
+        throw new ArgumentOutOfRangeException(nameof(temperatura), temperatura,
+            "Temperatura deve ser >= 0.01f para evitar overflow numérico no softmax.");
 }

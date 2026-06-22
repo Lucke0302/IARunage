@@ -34,7 +34,8 @@ public static class ForjaMassiva
             logger.Log($"Especializando contra: {mobAtual.Nome}...");
 
             QAgent playerEspecializado = new QAgent(tempPlayer, instintosPlayer);
-            playerEspecializado.ImportarPesos(pesosGlobais);
+            if (!playerEspecializado.ImportarPesos(pesosGlobais))
+                logger.LogError("FALHA CRÍTICA: Pesos globais corrompidos ou inválidos na especialização!");
             playerEspecializado.DefinirExploracao(0.6f); 
 
             QAgent mobColmeia = new QAgent(mobAtual.Temperatura, mobAtual.InstintosBase);

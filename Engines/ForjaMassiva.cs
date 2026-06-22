@@ -7,40 +7,8 @@ namespace Runage.Engines;
 
 public static class ForjaMassiva
 {
-    private static class CombatEnvironmentPool
-    {
-        private const int Capacity = 16;
-        private static readonly object _lock = new();
-        private static readonly Stack<CombatEnvironment> _pool = new(Capacity);
-
-        public static CombatEnvironment Get(PerfilMob perfil, float vies)
-        {
-            lock (_lock)
-            {
-                if (_pool.Count > 0)
-                {
-                    CombatEnvironment env = _pool.Pop();
-                    env.Reset(perfil, vies);
-                    return env;
-                }
-            }
-
-            return new CombatEnvironment(perfil, vies);
-        }
-
-        public static void Return(CombatEnvironment env)
-        {
-            lock (_lock)
-            {
-                if (_pool.Count < Capacity)
-                    _pool.Push(env);
-            }
-        }
-    }
-
     public static async Task IniciarAsync(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
-        Console.Clear();
         logger.Log("==================================================");
         logger.Log(" FORJA MASSIVA (TREINAMENTO REAL DE TRANSFERÊNCIA) ");
         logger.Log("==================================================\n");
@@ -85,7 +53,6 @@ public static class ForjaMassiva
         logger.LogSuccess("==================================================");
         logger.LogSuccess(" FORJA CONCLUÍDA! O ecossistema está pronto para o jogo.");
         logger.LogSuccess("==================================================");
-        Console.ReadLine();
     }
 
     private static void TreinarGlobal(QAgent player, Dictionary<int, PerfilMob> mobs, float vies, int sims, int episodios, ILogger logger)
@@ -179,7 +146,7 @@ public static class ForjaMassiva
         logger.LogWarning($"   -> Stats vs {perfil.Nome}: Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates: {(totalEmpates / (float)totalLutas):P2}");
     }
 
-        private static readonly int[][] AcoesPorAndar;
+    private static readonly int[][] AcoesPorAndar;
 
     static ForjaMassiva()
     {

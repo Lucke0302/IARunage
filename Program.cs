@@ -29,16 +29,36 @@ class Program
         switch (modulo)
         {
             case 1:
-                ArenaDeTestes.Iniciar(viesValor, logger, progress);
+                Console.Clear();
+                Console.Write("ID do Mob: ");
+                int mobId = int.Parse(Console.ReadLine() ?? "1");
+                Console.Write("Quantidade de Simulações (Ex: 5): ");
+                int numSimulacoes = int.Parse(Console.ReadLine() ?? "5");
+                Console.Write("Episódios por Simulação (Ex: 5000): ");
+                int episodios = int.Parse(Console.ReadLine() ?? "5000");
+                ArenaDeTestes.Iniciar(mobId, numSimulacoes, episodios, viesValor, logger, progress);
+                Console.WriteLine("\nPressione ENTER para continuar...");
+                Console.ReadLine();
                 break;
             case 2:
                 await ForjaMassiva.IniciarAsync(viesValor, logger, progress);
+                Console.WriteLine("\nPressione ENTER para continuar...");
+                Console.ReadLine();
                 break;
             case 3:
                 await ModoSobrevivencia.IniciarAsync(viesValor, logger, progress);
+                Console.WriteLine("\nPressione ENTER para continuar...");
+                Console.ReadLine();
                 break;
             case 4:
-                ArenaDeTestes.ExecutarTesteGlobal(viesValor, logger, progress);
+                Console.Clear();
+                Console.Write("Quantidade de Simulações (Ex: 5): ");
+                int numSimulacoesGlobal = int.Parse(Console.ReadLine() ?? "5");
+                Console.Write("Episódios por Simulação (Ex: 5000): ");
+                int episodiosGlobal = int.Parse(Console.ReadLine() ?? "5000");
+                ArenaDeTestes.ExecutarTesteGlobal(1, numSimulacoesGlobal, episodiosGlobal, viesValor, logger, progress);
+                Console.WriteLine("\nPressione ENTER para continuar...");
+                Console.ReadLine();
                 break;
             default:
                 logger.LogWarning("Módulo inválido.");

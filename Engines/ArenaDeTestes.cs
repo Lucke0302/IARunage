@@ -7,9 +7,8 @@ namespace Runage.Engines;
 
 public static class ArenaDeTestes
 {
-    public static void Iniciar(float viesValor, ILogger logger, IProgressReporter? progress = null)
+    public static void Iniciar(int mobId, int numSimulacoes, int episodios, float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
-        Console.Clear();
         logger.Log("==================================================");
         logger.Log(" ARENA DE TESTES (LABORATÓRIO DE BALANCEAMENTO) ");
         logger.Log("==================================================\n");
@@ -17,27 +16,11 @@ public static class ArenaDeTestes
         // O laboratório tem o próprio dicionário para alterar atributos sem medo
         var dicionarioMobs = ObterMobsLaboratorio();
 
-        logger.Log("Escolha o Mob para testar contra o Player:");
-        foreach (var kvp in dicionarioMobs)
-        {
-            logger.Log($"[{kvp.Key}] {kvp.Value.Nome} (Arquétipo: {kvp.Value.Arquetipo.Nome})");
-        }
-        
-        Console.Write("\nID do Mob: ");
-        int mobId = int.Parse(Console.ReadLine() ?? "1");
-
-        Console.Write("Quantidade de Simulações (Ex: 5): ");
-        int numSimulacoes = int.Parse(Console.ReadLine() ?? "5");
-
-        Console.Write("Episódios por Simulação (Ex: 5000): ");
-        int episodios = int.Parse(Console.ReadLine() ?? "5000");
-
         ExecutarTreinoIsolado(dicionarioMobs[mobId], numSimulacoes, episodios, viesValor, logger);
     }
 
     private static void ExecutarTreinoIsolado(PerfilMob mobEscolhido, int numSimulacoes, int episodiosPorSimulacao, float viesValorParam, ILogger logger)
     {
-        Console.Clear();
         logger.Log("==================================================");
         logger.Log($" INICIANDO TESTE ISOLADO: PLAYER VS {mobEscolhido.Nome.ToUpper()}");
         logger.Log("==================================================\n");
@@ -61,40 +44,47 @@ public static class ArenaDeTestes
 
             for (int ep = 1; ep <= episodiosPorSimulacao; ep++)
             {
-                CombatEnvironment env = new CombatEnvironment(mobEscolhido, viesValorParam);
-                bool lutaAtiva = true;
-                int turnosAtuais = 0;
-
-                                while (lutaAtiva && turnosAtuais < maxTurnosPorLuta)
+                CombatEnvironment env = CombatEnvironmentPool.Get(mobEscolhido, viesValorParam);
+                try
                 {
-                    turnosAtuais++;
-                    FeatureVector estado = env.GetFeatures();
+                    bool lutaAtiva = true;
+                    int turnosAtuais = 0;
 
-                    int acaoPlayer = player.EscolherAcao(estado);
-                    int acaoMob = mob.EscolherAcao(estado);
-
-                    Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
-                    FeatureVector novoEstado = env.GetFeatures();
-
-                    player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado);
-                    mob.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
-
-                    if (env.IsGameOver)
+                    while (lutaAtiva && turnosAtuais < maxTurnosPorLuta)
                     {
-                        lutaAtiva = false;
-                        auraFinalPlayer = env.AuraPlayer;
+                        turnosAtuais++;
+                        FeatureVector estado = env.GetFeatures();
 
-                        if (env.PlayerHP <= 0) playerMortes++;
-                        if (env.MobHP <= 0) mobMortes++;
-                        if (env.PlayerHP > 0 && env.MobHP > 0) empatesPacificos++;
+                        int acaoPlayer = player.EscolherAcao(estado);
+                        int acaoMob = mob.EscolherAcao(estado);
+
+                        Reward recompensas = env.ResolverTick(acaoPlayer, acaoMob);
+                        FeatureVector novoEstado = env.GetFeatures();
+
+                        player.Aprender(estado, acaoPlayer, recompensas.Player, novoEstado);
+                        mob.Aprender(estado, acaoMob, recompensas.Mob, novoEstado);
+
+                        if (env.IsGameOver)
+                        {
+                            lutaAtiva = false;
+                            auraFinalPlayer = env.AuraPlayer;
+
+                            if (env.PlayerHP <= 0) playerMortes++;
+                            if (env.MobHP <= 0) mobMortes++;
+                            if (env.PlayerHP > 0 && env.MobHP > 0) empatesPacificos++;
+                        }
+                    }
+
+                    // Estouro de limite de turnos conta como empate
+                    if (!env.IsGameOver && turnosAtuais >= maxTurnosPorLuta)
+                    {
+                        auraFinalPlayer = env.AuraPlayer;
+                        empatesPacificos++;
                     }
                 }
-
-                // Estouro de limite de turnos conta como empate
-                if (!env.IsGameOver && turnosAtuais >= maxTurnosPorLuta)
+                finally
                 {
-                    auraFinalPlayer = env.AuraPlayer;
-                    empatesPacificos++;
+                    CombatEnvironmentPool.Return(env);
                 }
             }
 
@@ -119,11 +109,9 @@ public static class ArenaDeTestes
         }
 
         logger.LogWarning("\n[ARENA] Teste concluído! Nenhum peso foi salvo no disco. Este é apenas um ambiente de laboratório.");
-        Console.WriteLine("\nPressione ENTER para voltar ao Menu Principal...");
-        Console.ReadLine();
     }
 
-    public static void ExecutarTesteGlobal(float viesValor, ILogger logger, IProgressReporter? progress = null)
+    public static void ExecutarTesteGlobal(int mobId, int numSimulacoes, int episodios, float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
         var dicionarioMobs = ObterMobsLaboratorio();
         
@@ -137,14 +125,13 @@ public static class ArenaDeTestes
             logger.LogWarning($"\n>>> TESTANDO MOB: {mob.Nome.ToUpper()} <<<");
             
             // Chamada direta para o motor de treino com os parâmetros fixos
-            ExecutarTreinoIsolado(mob, 5, 5000, viesValor, logger);
+            ExecutarTreinoIsolado(mob, numSimulacoes, episodios, viesValor, logger);
 
             mobIndex++;
             progress?.ReportProgress((float)mobIndex / totalMobs * 100f, $"Testando {mob.Nome}...");
         }
 
         logger.Log("\nVarredura Global Concluída!");
-        Console.ReadLine();
     }
 
     private static Dictionary<int, PerfilMob> ObterMobsLaboratorio()

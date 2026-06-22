@@ -32,7 +32,6 @@ public static class ModoSobrevivencia
 
     public static async Task IniciarAsync(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
-        Console.Clear();
         logger.Log("==================================================");
         logger.Log(" MANOPLA DE PRODÍGIOS (MODO SOBREVIVÊNCIA) ");
         logger.Log("==================================================\n");
@@ -41,7 +40,6 @@ public static class ModoSobrevivencia
         if (pesosGlobais == null)
         {
             logger.LogError("ERRO: Cérebro Global não encontrado! Execute a Forja Massiva [2] primeiro.");
-            Console.ReadLine();
             return;
         }
 
@@ -92,7 +90,6 @@ public static class ModoSobrevivencia
                     if (vidas <= 0) 
                     {
                         logger.Log($"\nFIM DE JOGO. O Player sucumbiu no Andar {andar}, Sala {sala}.");
-                        Console.ReadLine();
                         return; 
                     }
                     sala--; // Repete a sala
@@ -114,7 +111,6 @@ public static class ModoSobrevivencia
         }
         
         logger.LogWarning("\nPARABÉNS! VOCÊ CONQUISTOU A MANOPLA DE PRODÍGIOS!");
-        Console.ReadLine();
     }
 
     private static async Task<(bool sobreviveu, string detalhe)> ExecutarCombateAsync(
@@ -139,7 +135,9 @@ public static class ModoSobrevivencia
         if (pesosColmeia != null) mob.ImportarPesos(pesosColmeia);
         mob.DefinirExploracao(0.05f);
 
-        CombatEnvironment env = new CombatEnvironment(inimigo, viesValor);
+        CombatEnvironment env = CombatEnvironmentPool.Get(inimigo, viesValor);
+        try
+        {
         env.CombateMortal = true;
         env.AplicarMultiplicadorPlayer(pMultiplicador);
         
@@ -176,6 +174,11 @@ public static class ModoSobrevivencia
             return (true, "Sobreviveu por Exaustão de Tempo ⏳");
             
         return (true, "Resolução Pacífica ou Fuga 🕊️/🏃");
+        }
+        finally
+        {
+            CombatEnvironmentPool.Return(env);
+        }
     }
 
         private static PerfilMob SortearNpc(int tensao, Dictionary<int, PerfilMob> dic, Random rnd)

@@ -30,19 +30,17 @@ public static class ModoSobrevivencia
         return AcoesPorAndarCache[idx];
     }
 
-    public static async Task IniciarAsync(float viesValor)
+    public static async Task IniciarAsync(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
         Console.Clear();
-        Console.WriteLine("==================================================");
-        Console.WriteLine(" MANOPLA DE PRODÍGIOS (MODO SOBREVIVÊNCIA) ");
-        Console.WriteLine("==================================================\n");
+        logger.Log("==================================================");
+        logger.Log(" MANOPLA DE PRODÍGIOS (MODO SOBREVIVÊNCIA) ");
+        logger.Log("==================================================\n");
 
         float[][]? pesosGlobais = await DataHandler.CarregarPesosPlayerAsync(viesValor, "pesos_Global.json");
         if (pesosGlobais == null)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("ERRO: Cérebro Global não encontrado! Execute a Forja Massiva [2] primeiro.");
-            Console.ResetColor();
+            logger.LogError("ERRO: Cérebro Global não encontrado! Execute a Forja Massiva [2] primeiro.");
             Console.ReadLine();
             return;
         }
@@ -53,13 +51,11 @@ public static class ModoSobrevivencia
         var dicionarioMobs = ObterTodosOsMobs();
         Random rnd = new();
 
-        Console.WriteLine($"Acessando matriz neural (Viés: {viesValor:F1})...\nO Desafio começou.\n");
+        logger.Log($"Acessando matriz neural (Viés: {viesValor:F1})...\nO Desafio começou.\n");
 
         for (int andar = 1; andar <= andarMaximo; andar++)
         {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"=== ANDAR {andar} ===");
-            Console.ResetColor();
+            logger.LogInfo($"=== ANDAR {andar} ===");
 
             int tensaoDoAndar = (andar % 10 == 0) ? 10 : andar % 10;
             float multiplicadorMob = 1.0f + (andar * 0.05f);
@@ -67,9 +63,7 @@ public static class ModoSobrevivencia
             if (tensaoDoAndar == 10) 
             {
                 multiplicadorMob *= 1.20f; 
-                Console.ForegroundColor = ConsoleColor.DarkMagenta;
-                Console.WriteLine("CUIDADO: Presença Colossal Detectada (Andar de Chefe).");
-                Console.ResetColor();
+                logger.LogWarning("CUIDADO: Presença Colossal Detectada (Andar de Chefe).");
             }
 
             for (int sala = 1; sala <= 5; sala++)
@@ -86,20 +80,18 @@ public static class ModoSobrevivencia
                                                   perfilBase.DanoPesado * multiplicadorMob,
                                                   perfilBase.ResisteHitKill);
 
-                Console.Write($"Sala {sala}/5: {inimigo.Nome} -> ");
+                logger.Log($"Sala {sala}/5: {inimigo.Nome} -> ");
 
                 // Puxando o novo retorno de Tupla
                 var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, inimigo, playerMultiplicador, acoesPermitidas);
                 if (!resultado.sobreviveu)
                 {
                     vidas--;
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine($"MORTE! O {inimigo.Nome} foi letal. Vidas restantes: {vidas}");
-                    Console.ResetColor();
+                    logger.LogError($"MORTE! O {inimigo.Nome} foi letal. Vidas restantes: {vidas}");
 
                     if (vidas <= 0) 
                     {
-                        Console.WriteLine($"\nFIM DE JOGO. O Player sucumbiu no Andar {andar}, Sala {sala}.");
+                        logger.Log($"\nFIM DE JOGO. O Player sucumbiu no Andar {andar}, Sala {sala}.");
                         Console.ReadLine();
                         return; 
                     }
@@ -109,24 +101,19 @@ public static class ModoSobrevivencia
                 {
                     // Colore o console dinamicamente conforme a agressividade do desfecho
                     if (resultado.detalhe.Contains("Abatido"))
-                        Console.ForegroundColor = ConsoleColor.DarkBlue; // Matou!
+                        logger.LogWarning($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
                     else if (resultado.detalhe.Contains("Exaustão"))
-                        Console.ForegroundColor = ConsoleColor.DarkYellow; // Limite de turnos
+                        logger.LogWarning($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
                     else
-                        Console.ForegroundColor = ConsoleColor.Green; // Fuga ou Paz
-
-                    Console.WriteLine($"Vitória! ({resultado.detalhe})");
-                    Console.ResetColor();
+                        logger.LogSuccess($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
                     
                     playerMultiplicador += 0.04f; 
                 }
             }
-            Console.WriteLine($"Andar {andar} limpo! Status Base ampliado: {playerMultiplicador:F2}x\n");
+            logger.Log($"Andar {andar} limpo! Status Base ampliado: {playerMultiplicador:F2}x\n");
         }
         
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("\nPARABÉNS! VOCÊ CONQUISTOU A MANOPLA DE PRODÍGIOS!");
-        Console.ResetColor();
+        logger.LogWarning("\nPARABÉNS! VOCÊ CONQUISTOU A MANOPLA DE PRODÍGIOS!");
         Console.ReadLine();
     }
 

@@ -38,30 +38,32 @@ public static class ForjaMassiva
         }
     }
 
-    public static async Task IniciarAsync(float viesValor)
+    public static async Task IniciarAsync(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
         Console.Clear();
-        Console.WriteLine("==================================================");
-        Console.WriteLine(" FORJA MASSIVA (TREINAMENTO REAL DE TRANSFERÊNCIA) ");
-        Console.WriteLine("==================================================\n");
+        logger.Log("==================================================");
+        logger.Log(" FORJA MASSIVA (TREINAMENTO REAL DE TRANSFERÊNCIA) ");
+        logger.Log("==================================================\n");
 
         var dicionarioMobs = ObterTodosOsMobs();
         float tempPlayer = 15.0f;
         float[] instintosPlayer = InstinctHelper.CalcularInstintos(viesValor);
 
-        Console.WriteLine("[FASE 1] Forjando o Cérebro Global (Sobrevivência Básica)...");
+        logger.Log("[FASE 1] Forjando o Cérebro Global (Sobrevivência Básica)...");
         QAgent playerGlobal = new QAgent(tempPlayer, instintosPlayer);
-        TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 10, episodios: 6000);
+        TreinarGlobal(playerGlobal, dicionarioMobs, viesValor, sims: 10, episodios: 6000, logger);
         
         float[][] pesosGlobais = playerGlobal.ExportarPesos();
         await DataHandler.SalvarPesosPlayerAsync(viesValor, "pesos_Global.json", pesosGlobais);
-        Console.WriteLine(">> Cérebro Global salvo com sucesso!\n");
+        logger.Log(">> Cérebro Global salvo com sucesso!\n");
 
-        Console.WriteLine("[FASE 2] Iniciando Especialização e Mente Coletiva NPC...\n");
+        logger.Log("[FASE 2] Iniciando Especialização e Mente Coletiva NPC...\n");
+        int mobIndex = 0;
+        int totalMobs = dicionarioMobs.Count;
         foreach (var kvp in dicionarioMobs)
         {
             PerfilMob mobAtual = kvp.Value;
-            Console.WriteLine($"Especializando contra: {mobAtual.Nome}...");
+            logger.Log($"Especializando contra: {mobAtual.Nome}...");
 
             QAgent playerEspecializado = new QAgent(tempPlayer, instintosPlayer);
             playerEspecializado.ImportarPesos(pesosGlobais);
@@ -69,23 +71,24 @@ public static class ForjaMassiva
 
             QAgent mobColmeia = new QAgent(mobAtual.Temperatura, mobAtual.InstintosBase);
 
-            TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000);
+            TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000, logger);
 
             await DataHandler.SalvarPesosPlayerAsync(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
             await DataHandler.SalvarPesosNPCAsync(mobAtual.Nome, viesValor, mobColmeia.ExportarPesos());
             
-            Console.WriteLine($">> Conhecimento Tático e Colmeia salvos para {mobAtual.Nome}.\n");
+            logger.Log($">> Conhecimento Tático e Colmeia salvos para {mobAtual.Nome}.\n");
+
+            mobIndex++;
+            progress?.ReportProgress((float)mobIndex / totalMobs * 100f, $"Processando {mobAtual.Nome}...");
         }
 
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("==================================================");
-        Console.WriteLine(" FORJA CONCLUÍDA! O ecossistema está pronto para o jogo.");
-        Console.WriteLine("==================================================");
-        Console.ResetColor();
+        logger.LogSuccess("==================================================");
+        logger.LogSuccess(" FORJA CONCLUÍDA! O ecossistema está pronto para o jogo.");
+        logger.LogSuccess("==================================================");
         Console.ReadLine();
     }
 
-    private static void TreinarGlobal(QAgent player, Dictionary<int, PerfilMob> mobs, float vies, int sims, int episodios)
+    private static void TreinarGlobal(QAgent player, Dictionary<int, PerfilMob> mobs, float vies, int sims, int episodios, ILogger logger)
     {
         var listaMobs = new List<PerfilMob>(mobs.Values);
         Random rnd = new();
@@ -99,7 +102,7 @@ public static class ForjaMassiva
             int andarMin = 1;
             int andarMax = sim * 10;
             
-            Console.WriteLine($"   -> Simulação {sim}/{sims} (Andares {andarMin}-{andarMax})...");
+            logger.Log($"   -> Simulação {sim}/{sims} (Andares {andarMin}-{andarMax})...");
 
             for (int ep = 1; ep <= episodios; ep++)
             {
@@ -129,13 +132,11 @@ public static class ForjaMassiva
         }
 
         int totalLutas = sims * episodios;
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"\n[ESTATÍSTICAS DO TREINO GLOBAL]");
-        Console.WriteLine($"Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates/Fugas: {(totalEmpates / (float)totalLutas):P2}\n");
-        Console.ResetColor();
+        logger.LogInfo($"\n[ESTATÍSTICAS DO TREINO GLOBAL]");
+        logger.LogInfo($"Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates/Fugas: {(totalEmpates / (float)totalLutas):P2}\n");
     }
 
-    private static void TreinarEspecializado(QAgent player, QAgent mob, PerfilMob perfil, float vies, int sims, int episodios)
+    private static void TreinarEspecializado(QAgent player, QAgent mob, PerfilMob perfil, float vies, int sims, int episodios, ILogger logger)
     {
         Random rnd = new();
         
@@ -175,9 +176,7 @@ public static class ForjaMassiva
         }
 
         int totalLutas = sims * episodios;
-        Console.ForegroundColor = ConsoleColor.DarkYellow;
-        Console.WriteLine($"   -> Stats vs {perfil.Nome}: Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates: {(totalEmpates / (float)totalLutas):P2}");
-        Console.ResetColor();
+        logger.LogWarning($"   -> Stats vs {perfil.Nome}: Vitórias: {(totalVitorias / (float)totalLutas):P2} | Derrotas: {(totalDerrotas / (float)totalLutas):P2} | Empates: {(totalEmpates / (float)totalLutas):P2}");
     }
 
         private static readonly int[][] AcoesPorAndar;

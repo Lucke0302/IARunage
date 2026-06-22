@@ -7,20 +7,20 @@ namespace Runage.Engines;
 
 public static class ArenaDeTestes
 {
-    public static void Iniciar(float viesValor)
+    public static void Iniciar(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
         Console.Clear();
-        Console.WriteLine("==================================================");
-        Console.WriteLine(" ARENA DE TESTES (LABORATÓRIO DE BALANCEAMENTO) ");
-        Console.WriteLine("==================================================\n");
+        logger.Log("==================================================");
+        logger.Log(" ARENA DE TESTES (LABORATÓRIO DE BALANCEAMENTO) ");
+        logger.Log("==================================================\n");
 
         // O laboratório tem o próprio dicionário para alterar atributos sem medo
         var dicionarioMobs = ObterMobsLaboratorio();
 
-        Console.WriteLine("Escolha o Mob para testar contra o Player:");
+        logger.Log("Escolha o Mob para testar contra o Player:");
         foreach (var kvp in dicionarioMobs)
         {
-            Console.WriteLine($"[{kvp.Key}] {kvp.Value.Nome} (Arquétipo: {kvp.Value.Arquetipo.Nome})");
+            logger.Log($"[{kvp.Key}] {kvp.Value.Nome} (Arquétipo: {kvp.Value.Arquetipo.Nome})");
         }
         
         Console.Write("\nID do Mob: ");
@@ -32,15 +32,15 @@ public static class ArenaDeTestes
         Console.Write("Episódios por Simulação (Ex: 5000): ");
         int episodios = int.Parse(Console.ReadLine() ?? "5000");
 
-        ExecutarTreinoIsolado(dicionarioMobs[mobId], numSimulacoes, episodios, viesValor);
+        ExecutarTreinoIsolado(dicionarioMobs[mobId], numSimulacoes, episodios, viesValor, logger);
     }
 
-    private static void ExecutarTreinoIsolado(PerfilMob mobEscolhido, int numSimulacoes, int episodiosPorSimulacao, float viesValorParam)
+    private static void ExecutarTreinoIsolado(PerfilMob mobEscolhido, int numSimulacoes, int episodiosPorSimulacao, float viesValorParam, ILogger logger)
     {
         Console.Clear();
-        Console.WriteLine("==================================================");
-        Console.WriteLine($" INICIANDO TESTE ISOLADO: PLAYER VS {mobEscolhido.Nome.ToUpper()}");
-        Console.WriteLine("==================================================\n");
+        logger.Log("==================================================");
+        logger.Log($" INICIANDO TESTE ISOLADO: PLAYER VS {mobEscolhido.Nome.ToUpper()}");
+        logger.Log("==================================================\n");
 
         // Temperatura fixa corrigida para evitar que o Caótico sofra
         float tempPlayer = 15.0f;
@@ -98,19 +98,17 @@ public static class ArenaDeTestes
                 }
             }
 
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"=== FIM DA SIMULAÇÃO {sim} ===");
-            Console.ResetColor();
-            Console.WriteLine($"Mortes do Player: {playerMortes}");
-            Console.WriteLine($"Mortes do Mob:    {mobMortes}");
-            Console.WriteLine($"Empates Pacíficos:{empatesPacificos}");
+            logger.LogInfo($"=== FIM DA SIMULAÇÃO {sim} ===");
+            logger.Log($"Mortes do Player: {playerMortes}");
+            logger.Log($"Mortes do Mob:    {mobMortes}");
+            logger.Log($"Empates Pacíficos:{empatesPacificos}");
             
-            if (auraFinalPlayer >= 20) Console.ForegroundColor = ConsoleColor.Green;
-            else if (auraFinalPlayer <= -20) Console.ForegroundColor = ConsoleColor.Red;
-            else Console.ForegroundColor = ConsoleColor.DarkGray;
-            
-            Console.WriteLine($"Aura Final Player: {auraFinalPlayer:F1}\n");
-            Console.ResetColor();
+            if (auraFinalPlayer >= 20)
+                logger.LogSuccess($"Aura Final Player: {auraFinalPlayer:F1}\n");
+            else if (auraFinalPlayer <= -20)
+                logger.LogError($"Aura Final Player: {auraFinalPlayer:F1}\n");
+            else
+                logger.Log($"Aura Final Player: {auraFinalPlayer:F1}\n");
 
             // Decaimento de exploração contínuo
             float progresso = (numSimulacoes > 1) ? (float)(sim - 1) / (numSimulacoes - 1) : 1f;
@@ -120,31 +118,32 @@ public static class ArenaDeTestes
             mob.ForcarAmadurecimento(pisoAtual);
         }
 
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("\n[ARENA] Teste concluído! Nenhum peso foi salvo no disco. Este é apenas um ambiente de laboratório.");
-        Console.ResetColor();
+        logger.LogWarning("\n[ARENA] Teste concluído! Nenhum peso foi salvo no disco. Este é apenas um ambiente de laboratório.");
         Console.WriteLine("\nPressione ENTER para voltar ao Menu Principal...");
         Console.ReadLine();
     }
 
-    public static void ExecutarTesteGlobal(float viesValor)
+    public static void ExecutarTesteGlobal(float viesValor, ILogger logger, IProgressReporter? progress = null)
     {
         var dicionarioMobs = ObterMobsLaboratorio();
         
-        Console.WriteLine("\n=== INICIANDO VARREDURA GLOBAL DE BALANCEAMENTO ===");
-        Console.WriteLine("Cada mob passará por 5 simulações de 5000 episódios.\n");
+        logger.Log("\n=== INICIANDO VARREDURA GLOBAL DE BALANCEAMENTO ===");
+        logger.Log("Cada mob passará por 5 simulações de 5000 episódios.\n");
 
+        int mobIndex = 0;
+        int totalMobs = dicionarioMobs.Count;
         foreach (var mob in dicionarioMobs.Values)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"\n>>> TESTANDO MOB: {mob.Nome.ToUpper()} <<<");
-            Console.ResetColor();
+            logger.LogWarning($"\n>>> TESTANDO MOB: {mob.Nome.ToUpper()} <<<");
             
             // Chamada direta para o motor de treino com os parâmetros fixos
-            ExecutarTreinoIsolado(mob, 5, 5000, viesValor);
+            ExecutarTreinoIsolado(mob, 5, 5000, viesValor, logger);
+
+            mobIndex++;
+            progress?.ReportProgress((float)mobIndex / totalMobs * 100f, $"Testando {mob.Nome}...");
         }
 
-        Console.WriteLine("\nVarredura Global Concluída!");
+        logger.Log("\nVarredura Global Concluída!");
         Console.ReadLine();
     }
 

@@ -6,16 +6,19 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        Console.Clear();
-        Console.WriteLine("=====================================");
-        Console.WriteLine(" === PROJETO RUNAGE: HUB CENTRAL ===");
-        Console.WriteLine("=====================================\n");
+        ILogger logger = new ConsoleLogger();
+        IProgressReporter? progress = null;
 
-        Console.WriteLine("Selecione o Módulo de Operação:");
-        Console.WriteLine("[1] Arena de Testes (Laboratório de Balanceamento)");
-        Console.WriteLine("[2] Forja Massiva (Treinamento Real de IA)");
-        Console.WriteLine("[3] Manopla de Prodígios (Modo Sobrevivência - 100 Andares)");
-        Console.WriteLine("[4] Varredura Global (Testar todos os Mobs em sequência)");
+        Console.Clear();
+        logger.Log("=====================================");
+        logger.Log(" === PROJETO RUNAGE: HUB CENTRAL ===");
+        logger.Log("=====================================\n");
+
+        logger.Log("Selecione o Módulo de Operação:");
+        logger.Log("[1] Arena de Testes (Laboratório de Balanceamento)");
+        logger.Log("[2] Forja Massiva (Treinamento Real de IA)");
+        logger.Log("[3] Manopla de Prodígios (Modo Sobrevivência - 100 Andares)");
+        logger.Log("[4] Varredura Global (Testar todos os Mobs em sequência)");
         Console.Write("Escolha: ");
         int modulo = int.Parse(Console.ReadLine() ?? "1");
 
@@ -26,19 +29,19 @@ class Program
         switch (modulo)
         {
             case 1:
-                ArenaDeTestes.Iniciar(viesValor);
+                ArenaDeTestes.Iniciar(viesValor, logger, progress);
                 break;
             case 2:
-                await ForjaMassiva.IniciarAsync(viesValor);
+                await ForjaMassiva.IniciarAsync(viesValor, logger, progress);
                 break;
             case 3:
-                await ModoSobrevivencia.IniciarAsync(viesValor);
+                await ModoSobrevivencia.IniciarAsync(viesValor, logger, progress);
                 break;
             case 4:
-                ArenaDeTestes.ExecutarTesteGlobal(viesValor);
+                ArenaDeTestes.ExecutarTesteGlobal(viesValor, logger, progress);
                 break;
             default:
-                Console.WriteLine("Módulo inválido.");
+                logger.LogWarning("Módulo inválido.");
                 break;
         }
     }

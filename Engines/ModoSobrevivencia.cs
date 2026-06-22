@@ -70,22 +70,14 @@ public static class ModoSobrevivencia
 
                     int[] acoesPermitidas = ObterAcoes(andar);
                 
-                // Clona o mob para não poluir o dicionário base
-                PerfilMob inimigo = new PerfilMob(perfilBase.Nome, perfilBase.Arquetipo, perfilBase.Temperatura, 
-                                                  perfilBase.InstintosBase, perfilBase.RecompensaAbate, 
-                                                  perfilBase.HpBase * multiplicadorMob, 
-                                                  perfilBase.DanoLeve * multiplicadorMob, 
-                                                  perfilBase.DanoPesado * multiplicadorMob,
-                                                  perfilBase.ResisteHitKill);
-
-                logger.Log($"Sala {sala}/5: {inimigo.Nome} -> ");
+                logger.Log($"Sala {sala}/5: {perfilBase.Nome} -> ");
 
                 // Puxando o novo retorno de Tupla
-                var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, inimigo, playerMultiplicador, acoesPermitidas);
+                var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, perfilBase, playerMultiplicador, acoesPermitidas, multiplicadorMob);
                 if (!resultado.sobreviveu)
                 {
                     vidas--;
-                    logger.LogError($"MORTE! O {inimigo.Nome} foi letal. Vidas restantes: {vidas}");
+                    logger.LogError($"MORTE! O {perfilBase.Nome} foi letal. Vidas restantes: {vidas}");
 
                     if (vidas <= 0) 
                     {
@@ -98,11 +90,11 @@ public static class ModoSobrevivencia
                 {
                     // Colore o console dinamicamente conforme a agressividade do desfecho
                     if (resultado.detalhe.Contains("Abatido"))
-                        logger.LogWarning($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
+                        logger.LogWarning($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
                     else if (resultado.detalhe.Contains("Exaustão"))
-                        logger.LogWarning($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
+                        logger.LogWarning($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
                     else
-                        logger.LogSuccess($"Sala {sala}/5: {inimigo.Nome} -> Vitória! ({resultado.detalhe})");
+                        logger.LogSuccess($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
                     
                     playerMultiplicador += 0.04f; 
                 }
@@ -118,7 +110,8 @@ public static class ModoSobrevivencia
         float[][] pesosGlobais, 
         PerfilMob inimigo, 
         float pMultiplicador, 
-        int[] acoesPermitidas)
+        int[] acoesPermitidas,
+        float multiplicadorMob = 1.0f)
     {
         QAgent player = new QAgent(15.0f, null);
         player.ImportarPesos(pesosGlobais);
@@ -135,7 +128,7 @@ public static class ModoSobrevivencia
         if (pesosColmeia != null) mob.ImportarPesos(pesosColmeia);
         mob.DefinirExploracao(0.05f);
 
-        CombatEnvironment env = CombatEnvironmentPool.Get(inimigo, viesValor);
+        CombatEnvironment env = CombatEnvironmentPool.Get(inimigo, viesValor, multiplicadorMob);
         try
         {
         env.CombateMortal = true;

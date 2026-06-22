@@ -18,6 +18,10 @@ public class CombatEnvironment
     public float AuraPlayer = 0f;
     public bool IsGameOver = false;
 
+    public float MobHpMaxAtual { get; private set; }
+    public float MobDanoLeveAtual { get; private set; }
+    public float MobDanoPesadoAtual { get; private set; }
+
     public string CausaMortePlayer { get; private set; } = "Nenhuma";
     public float DanoSofridoPlayer { get; private set; } = 0f;
     public bool PlayerMorreuPorAutoDano { get; private set; } = false;
@@ -39,15 +43,19 @@ public class CombatEnvironment
     private int oportunistaTurnosRecuo = 0;
     private float mobDanoPesadoNormalizado;
 
-    public CombatEnvironment(PerfilMob perfil, float vies) => Reset(perfil, vies);
+    public CombatEnvironment(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f) => Reset(perfil, vies, multiplicadorMob);
 
-    internal void Reset(PerfilMob perfil, float vies)
+    internal void Reset(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f)
     {
         perfilMob = perfil;
         playerVies = vies;
 
+        MobHpMaxAtual = perfil.HpBase * multiplicadorMob;
+        MobDanoLeveAtual = perfil.DanoLeve * multiplicadorMob;
+        MobDanoPesadoAtual = perfil.DanoPesado * multiplicadorMob;
+
         PlayerHP = 100f;
-        MobHP = perfil.HpBase;
+        MobHP = MobHpMaxAtual;
         CombateMortal = false;
         PlayerMultiplicador = 1.0f;
         Distancia = 3f;
@@ -66,10 +74,10 @@ public class CombatEnvironment
         oportunistaFaseRecuo = false;
         oportunistaTurnosRecuo = 0;
 
-        mobHpInicial = perfil.HpBase;
-        mobMaxHP = perfil.HpBase;
+        mobHpInicial = MobHpMaxAtual;
+        mobMaxHP = MobHpMaxAtual;
 
-        float danoPesadoReal = perfil.DanoPesado * perfil.Arquetipo.MultiplicadorDano;
+        float danoPesadoReal = MobDanoPesadoAtual * perfil.Arquetipo.MultiplicadorDano;
         mobDanoPesadoNormalizado = Math.Clamp(danoPesadoReal / 150f, 0f, 1f);
 
         float fatorHP = (vies < 0.5f) ? (1.5f - vies) : 1.0f;
@@ -426,7 +434,7 @@ public class CombatEnvironment
 
             if (mobTentouAtacar)
             {
-                float baseDano = (acaoMob == 0 || acaoMob == 5) ? perfilMob.DanoLeve : perfilMob.DanoPesado;
+                float baseDano = (acaoMob == 0 || acaoMob == 5) ? MobDanoLeveAtual : MobDanoPesadoAtual;
                 baseDano *= arq.MultiplicadorDano;
                 danoM = CalcularDanoOrganico(baseDano);
 

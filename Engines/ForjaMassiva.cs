@@ -79,16 +79,7 @@ public static class ForjaMassiva
                 float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
 
-                PerfilMob mobTreino = new PerfilMob(
-                    mobSorteado.Nome, mobSorteado.Arquetipo, mobSorteado.Temperatura, 
-                    mobSorteado.InstintosBase, mobSorteado.RecompensaAbate, 
-                    mobSorteado.HpBase * mMultiplicador, 
-                    mobSorteado.DanoLeve * mMultiplicador, 
-                    mobSorteado.DanoPesado * mMultiplicador,
-                    mobSorteado.ResisteHitKill
-                );
-
-                int resultado = ExecutarEpisodio(player, null, mobTreino, vies, pMultiplicador, andarSorteado);
+                int resultado = ExecutarEpisodio(player, null, mobSorteado, vies, pMultiplicador, andarSorteado, mMultiplicador);
                 
                 if (resultado == 1) totalVitorias++;
                 else if (resultado == -1) totalDerrotas++;
@@ -122,16 +113,7 @@ public static class ForjaMassiva
                 float pMultiplicador = 1.0f + ((andarSorteado - 1) * 0.20f);
                 float mMultiplicador = 1.0f + (andarSorteado * 0.05f);
 
-                PerfilMob mobTreino = new PerfilMob(
-                    perfil.Nome, perfil.Arquetipo, perfil.Temperatura, 
-                    perfil.InstintosBase, perfil.RecompensaAbate, 
-                    perfil.HpBase * mMultiplicador, 
-                    perfil.DanoLeve * mMultiplicador, 
-                    perfil.DanoPesado * mMultiplicador,
-                    perfil.ResisteHitKill
-                );
-                
-                int resultado = ExecutarEpisodio(player, mob, mobTreino, vies, pMultiplicador, andarSorteado);
+                int resultado = ExecutarEpisodio(player, mob, perfil, vies, pMultiplicador, andarSorteado, mMultiplicador);
                 
                 if (resultado == 1) totalVitorias++;
                 else if (resultado == -1) totalDerrotas++;
@@ -167,9 +149,9 @@ public static class ForjaMassiva
         return AcoesPorAndar[idx];
     }
 
-    private static int ExecutarEpisodio(QAgent player, QAgent? mobAgente, PerfilMob perfil, float vies, float pMultiplicador, int andar)
+    private static int ExecutarEpisodio(QAgent player, QAgent? mobAgente, PerfilMob perfil, float vies, float pMultiplicador, int andar, float mMultiplicador = 1.0f)
     {
-        CombatEnvironment env = CombatEnvironmentPool.Get(perfil, vies);
+        CombatEnvironment env = CombatEnvironmentPool.Get(perfil, vies, mMultiplicador);
         try
         {
             env.CombateMortal = true;

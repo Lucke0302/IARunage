@@ -9,19 +9,19 @@ public static class CombatEnvironmentPool
     private static readonly object _lock = new();
     private static readonly Stack<CombatEnvironment> _pool = new(Capacity);
 
-    public static CombatEnvironment Get(PerfilMob perfil, float vies)
+    public static CombatEnvironment Get(PerfilMob perfil, float vies, float multiplicadorMob = 1.0f)
     {
         lock (_lock)
         {
             if (_pool.Count > 0)
             {
                 CombatEnvironment env = _pool.Pop();
-                env.Reset(perfil, vies);
+                env.Reset(perfil, vies, multiplicadorMob);
                 return env;
             }
         }
 
-        return new CombatEnvironment(perfil, vies);
+        return new CombatEnvironment(perfil, vies, multiplicadorMob);
     }
 
     public static void Return(CombatEnvironment env)

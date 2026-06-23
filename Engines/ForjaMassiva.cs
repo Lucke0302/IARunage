@@ -42,7 +42,7 @@ public static class ForjaMassiva
 
             TreinarEspecializado(playerEspecializado, mobColmeia, mobAtual, viesValor, sims: 10, episodios: 6000, logger);
 
-            await DataHandler.SalvarPesosPlayerAsync(viesValor, $"pesos_{mobAtual.Nome.Replace(" ", "_")}.json", playerEspecializado.ExportarPesos());
+            await DataHandler.SalvarPesosPlayerAsync(viesValor, $"pesos_{mobAtual.Nome}.json", playerEspecializado.ExportarPesos());
             await DataHandler.SalvarPesosNPCAsync(mobAtual.Nome, viesValor, mobColmeia.ExportarPesos());
             
             logger.Log($">> Conhecimento Tático e Colmeia salvos para {mobAtual.Nome}.\n");

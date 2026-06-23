@@ -155,6 +155,11 @@ public static class DataHandler
 
     public static async Task SalvarPesosPlayerAsync(float vies, string nomeArquivo, float[][] pesos)
     {
+        // Normaliza o nome mantendo a extensão intacta
+        string baseName = Path.GetFileNameWithoutExtension(nomeArquivo);
+        string ext = Path.GetExtension(nomeArquivo);
+        nomeArquivo = NormalizarNome(baseName) + ext;
+
         string dir = Path.Combine(BaseDir, "Player", $"Vies_{vies:F1}");
         Directory.CreateDirectory(dir);
         string nomeBin = Path.ChangeExtension(nomeArquivo, ".bin");
@@ -172,6 +177,11 @@ public static class DataHandler
 
     public static async Task<float[][]?> CarregarPesosPlayerAsync(float vies, string nomeArquivo)
     {
+        // Normaliza o nome mantendo a extensão intacta
+        string baseName = Path.GetFileNameWithoutExtension(nomeArquivo);
+        string ext = Path.GetExtension(nomeArquivo);
+        nomeArquivo = NormalizarNome(baseName) + ext;
+
         string dir = Path.Combine(BaseDir, "Player", $"Vies_{vies:F1}");
         string cacheKeyJson = Path.Combine(dir, nomeArquivo);
         string cacheKeyBin = Path.Combine(dir, Path.ChangeExtension(nomeArquivo, ".bin"));

@@ -5,7 +5,8 @@ namespace Runage.Utils
 {
     public sealed class ThreadLocalRandomProvider : IRandomProvider
     {
-        private static readonly ThreadLocal<Random> _localRandom = new(() => new Random(Guid.NewGuid().GetHashCode()));
+        private static readonly ThreadLocal<XorShiftRandom> _localRandom =
+            new(() => new XorShiftRandom((uint)Guid.NewGuid().GetHashCode()));
 
         public double NextDouble() => _localRandom.Value!.NextDouble();
 
@@ -13,13 +14,11 @@ namespace Runage.Utils
 
         public int Next(int minValue, int maxValue) => _localRandom.Value!.Next(minValue, maxValue);
 
-        internal static Random CurrentRandom => _localRandom.Value!;
+        internal static XorShiftRandom CurrentRandom => _localRandom.Value!;
     }
 
     public static class RandomProvider
     {
         public static IRandomProvider Default { get; } = new ThreadLocalRandomProvider();
-
-        public static Random Current => ThreadLocalRandomProvider.CurrentRandom;
     }
 }

@@ -69,8 +69,6 @@ public static class ModoSobrevivencia
                 PerfilMob perfilBase = SortearNpc(tensaoDoAndar, dicionarioMobs, rnd);
 
                     int[] acoesPermitidas = ObterAcoes(andar);
-                
-                logger.Log($"Sala {sala}/5: {perfilBase.Nome} -> ");
 
                 // Puxando o novo retorno de Tupla
                 var resultado = await ExecutarCombateAsync(viesValor, pesosGlobais, perfilBase, playerMultiplicador, acoesPermitidas, multiplicadorMob, logger);
@@ -78,25 +76,18 @@ public static class ModoSobrevivencia
                 {
                     vidas--;
                     logger.LogError($"MORTE! O {perfilBase.Nome} foi letal. Vidas restantes: {vidas}");
-
-                    if (vidas <= 0) 
-                    {
-                        logger.Log($"\nFIM DE JOGO. O Player sucumbiu no Andar {andar}, Sala {sala}.");
-                        return; 
-                    }
-                    sala--; // Repete a sala
+                    sala--;
                 }
                 else
                 {
-                    // Colore o console dinamicamente conforme a agressividade do desfecho
                     if (resultado.detalhe.Contains("Abatido"))
                         logger.LogWarning($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
                     else if (resultado.detalhe.Contains("Exaustão"))
                         logger.LogWarning($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
                     else
                         logger.LogSuccess($"Sala {sala}/5: {perfilBase.Nome} -> Vitória! ({resultado.detalhe})");
-                    
-                    playerMultiplicador += 0.04f; 
+
+                    playerMultiplicador += 0.04f;
                 }
             }
             logger.Log($"Andar {andar} limpo! Status Base ampliado: {playerMultiplicador:F2}x\n");
@@ -118,7 +109,7 @@ public static class ModoSobrevivencia
         player.ImportarPesos(pesosGlobais);
 
         // Carregamento assíncrono dos pesos específicos com fallback
-        float[][]? pesosEspecificos = await DataHandler.CarregarPesosPlayerAsync(viesValor, $"pesos_{inimigo.Nome.Replace(" ", "_")}.json");
+        float[][]? pesosEspecificos = await DataHandler.CarregarPesosPlayerAsync(viesValor, $"pesos_{inimigo.Nome}.json");
         if (pesosEspecificos == null)
         {
             logger?.LogError($"CORRUPÇÃO/DADOS AUSENTES: Pesos específicos para {inimigo.Nome}. Tentando fallback para Global...");
